@@ -1364,6 +1364,328 @@ terraform force-unlock <lock-id>
 
 See `/infrastructure/README.md` for complete documentation, module details, and multi-cloud patterns.
 
+## AI/ML Integration Quick Start
+
+Add AI-powered features to your application with OpenAI, Anthropic Claude, and vector databases.
+
+### 1. Install AI/ML Dependencies
+
+```bash
+# Install AI SDKs
+npm install openai @anthropic-ai/sdk
+
+# Install vector database clients (choose one)
+npm install @pinecone-database/pinecone
+# OR
+npm install weaviate-ts-client
+
+# Install dependencies
+npm install ioredis zod
+```
+
+### 2. Configure Environment Variables
+
+```bash
+# Add to .env file
+
+# OpenAI Configuration
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4-turbo-preview
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+AI_MAX_TOKENS=1000
+AI_TEMPERATURE=0.7
+
+# Anthropic Claude Configuration
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Vector Database - Pinecone
+PINECONE_API_KEY=...
+PINECONE_INDEX_NAME=your-index
+
+# AI Rate Limiting
+AI_RATE_LIMIT_REQUESTS=10      # Per user per hour
+AI_RATE_LIMIT_WINDOW=3600
+
+# AI Cost Controls
+AI_MAX_COST_PER_USER_DAILY=5.00
+```
+
+### 3. Implement AI Services
+
+**Basic Content Generation:**
+```typescript
+// src/services/ai/openai.service.ts
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+export async function generateContent(prompt: string) {
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4-turbo-preview',
+    messages: [
+      {
+        role: 'system',
+        content: 'You are a helpful content generation assistant.',
+      },
+      {
+        role: 'user',
+        content: prompt,
+      },
+    ],
+    temperature: 0.7,
+    max_tokens: 1000,
+  });
+
+  return response.choices[0].message.content;
+}
+```
+
+**Semantic Search:**
+```typescript
+// src/services/search/vector-search.service.ts
+import { Pinecone } from '@pinecone-database/pinecone';
+import OpenAI from 'openai';
+
+const pinecone = new Pinecone({
+  apiKey: process.env.PINECONE_API_KEY!,
+});
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+export async function semanticSearch(query: string, topK: number = 5) {
+  // Generate embedding for query
+  const embedding = await openai.embeddings.create({
+    model: 'text-embedding-3-small',
+    input: query,
+  });
+
+  // Search vector database
+  const index = pinecone.Index(process.env.PINECONE_INDEX_NAME!);
+  const results = await index.query({
+    vector: embedding.data[0].embedding,
+    topK,
+    includeMetadata: true,
+  });
+
+  return results.matches.map((match) => ({
+    id: match.id,
+    score: match.score,
+    content: match.metadata?.content,
+  }));
+}
+```
+
+### 4. Add API Endpoints
+
+```typescript
+// src/routes/ai.routes.ts
+import express from 'express';
+import { generateContent } from '../services/ai/openai.service';
+import { authMiddleware } from '../middleware/auth.middleware';
+
+const router = express.Router();
+
+router.post('/generate', authMiddleware, async (req, res) => {
+  try {
+    const { prompt } = req.body;
+
+    if (!prompt) {
+      return res.status(400).json({ error: 'Prompt is required' });
+    }
+
+    const content = await generateContent(prompt);
+
+    res.json({ content });
+  } catch (error) {
+    console.error('AI generation error:', error);
+    res.status(500).json({ error: 'AI generation failed' });
+  }
+});
+
+export default router;
+
+// Add to app.ts
+import aiRoutes from './routes/ai.routes';
+app.use('/api/ai', aiRoutes);
+```
+
+### 5. Implement Rate Limiting
+
+```typescript
+// src/middleware/ai-rate-limit.middleware.ts
+import { Request, Response, NextFunction } from 'express';
+import Redis from 'ioredis';
+
+const redis = new Redis(process.env.REDIS_URL!);
+
+export async function aiRateLimitMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  const userId = req.user?.id;
+  const key = `ai:rate_limit:${userId}`;
+  const limit = 10; // requests per hour
+
+  const current = await redis.incr(key);
+
+  if (current === 1) {
+    await redis.expire(key, 3600); // 1 hour
+  }
+
+  if (current > limit) {
+    return res.status(429).json({
+      error: 'AI usage limit exceeded',
+      limit,
+      reset: await redis.ttl(key),
+    });
+  }
+
+  next();
+}
+```
+
+### AI/ML Use Cases
+
+```yaml
+Content Generation:
+  - Blog posts and articles
+  - Product descriptions
+  - Email templates
+  - Social media content
+
+Semantic Search:
+  - Knowledge base search
+  - Document similarity
+  - Recommendation systems
+
+RAG (Retrieval-Augmented Generation):
+  - Q&A chatbots with custom data
+  - Customer support automation
+  - Technical documentation assistant
+
+Text Analysis:
+  - Sentiment analysis
+  - Content moderation
+  - Key point extraction
+  - Summarization
+
+Code Assistance:
+  - Code generation
+  - Code explanation
+  - Bug detection
+  - Code review suggestions
+
+Image Generation:
+  - Product mockups
+  - Marketing images
+  - UI/UX prototypes
+  - Creative assets
+```
+
+### Cost Management
+
+```yaml
+Pricing (as of 2026):
+  GPT-4 Turbo:
+    Input: $0.01 per 1K tokens
+    Output: $0.03 per 1K tokens
+
+  GPT-3.5 Turbo:
+    Input: $0.0005 per 1K tokens
+    Output: $0.0015 per 1K tokens
+
+  Embeddings (text-embedding-3-small):
+    $0.00002 per 1K tokens
+
+  Claude 3.5 Sonnet:
+    Input: $0.003 per 1K tokens
+    Output: $0.015 per 1K tokens
+
+Cost Controls:
+  - Set per-user daily limits ($5 default)
+  - Track usage per organization
+  - Alert at 80% of budget
+  - Auto-disable at 100% of budget
+  - Monitor via CloudWatch metrics
+```
+
+### Security Best Practices
+
+```yaml
+Input Validation:
+  - Limit prompt length (max 4000 chars)
+  - Sanitize user inputs
+  - Block malicious prompts
+  - Content moderation on inputs
+
+Data Privacy:
+  - Never send PII to AI APIs
+  - Anonymize data before processing
+  - Log prompts/responses securely
+  - Allow opt-out of AI features
+
+API Key Management:
+  - Store keys in environment variables
+  - Rotate keys every 90 days
+  - Use separate keys per environment
+  - Monitor for key leaks
+
+Rate Limiting:
+  - 10 requests/hour per user (free tier)
+  - 100 requests/hour (pro tier)
+  - 1000 requests/hour (enterprise)
+  - Graduated limits based on plan
+```
+
+### Database Schema for AI Usage
+
+```prisma
+model AIUsage {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  provider      String   // openai, anthropic
+  operation     String   // generate, embed, search
+  model         String   // gpt-4, claude-3
+  inputTokens   Int      @map("input_tokens")
+  outputTokens  Int      @map("output_tokens")
+  totalTokens   Int      @map("total_tokens")
+  estimatedCost Float    @map("estimated_cost")
+  timestamp     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, timestamp])
+  @@map("ai_usage")
+}
+```
+
+### Testing AI Integrations
+
+```bash
+# Test content generation
+curl -X POST http://localhost:3000/api/ai/generate \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Write a blog post about AI in 2026"}'
+
+# Test semantic search
+curl -X POST http://localhost:3000/api/ai/search \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "How do I integrate AI?"}'
+
+# Get usage statistics
+curl http://localhost:3000/api/ai/usage?days=30 \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+See `UNIVERSAL_PROJECT_PROMPT.md` section "E. AI/ML Integration Patterns" for complete implementations including RAG, cost tracking, streaming responses, and monitoring.
+
 ---
 
 ## 📞 Need Help?

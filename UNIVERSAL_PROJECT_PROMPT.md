@@ -8073,6 +8073,780 @@ async function createUser(data: any) {
 }
 ```
 
+### E. AI/ML Integration Patterns
+
+Modern applications leverage AI/ML capabilities for enhanced user experiences, automation, and intelligent features.
+
+#### AI Content Generation
+
+**OpenAI Integration:**
+```typescript
+// src/services/ai/openai.service.ts
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+export class AIContentService {
+  /**
+   * Generate content using GPT-4
+   */
+  async generateContent(prompt: string, context?: string): Promise<string> {
+    const response = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || 'gpt-4-turbo-preview',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a helpful content generation assistant. Generate high-quality, accurate content based on user requests.',
+        },
+        {
+          role: 'user',
+          content: context ? `Context: ${context}\n\nRequest: ${prompt}` : prompt,
+        },
+      ],
+      temperature: parseFloat(process.env.AI_TEMPERATURE || '0.7'),
+      max_tokens: parseInt(process.env.AI_MAX_TOKENS || '1000'),
+    });
+
+    return response.choices[0].message.content || '';
+  }
+
+  /**
+   * Streaming content generation for real-time UX
+   */
+  async *streamContent(prompt: string): AsyncGenerator<string> {
+    const stream = await openai.chat.completions.create({
+      model: 'gpt-4-turbo-preview',
+      messages: [{ role: 'user', content: prompt }],
+      stream: true,
+    });
+
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || '';
+      if (content) yield content;
+    }
+  }
+
+  /**
+   * Generate embeddings for semantic search
+   */
+  async generateEmbedding(text: string): Promise<number[]> {
+    const response = await openai.embeddings.create({
+      model: process.env.EMBEDDING_MODEL || 'text-embedding-3-small',
+      input: text,
+    });
+
+    return response.data[0].embedding;
+  }
+}
+```
+
+**Anthropic Claude Integration:**
+```typescript
+// src/services/ai/anthropic.service.ts
+import Anthropic from '@anthropic-ai/sdk';
+
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+export class ClaudeService {
+  async generateContent(prompt: string, systemPrompt?: string): Promise<string> {
+    const message = await anthropic.messages.create({
+      model: 'claude-3-5-sonnet-20241022',
+      max_tokens: 4096,
+      system: systemPrompt || 'You are a helpful AI assistant.',
+      messages: [
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+    });
+
+    return message.content[0].type === 'text' ? message.content[0].text : '';
+  }
+
+  /**
+   * Streaming for real-time responses
+   */
+  async *streamContent(prompt: string): AsyncGenerator<string> {
+    const stream = await anthropic.messages.create({
+      model: 'claude-3-5-sonnet-20241022',
+      max_tokens: 4096,
+      messages: [{ role: 'user', content: prompt }],
+      stream: true,
+    });
+
+    for await (const event of stream) {
+      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+        yield event.delta.text;
+      }
+    }
+  }
+}
+```
+
+#### Semantic Search with Vector Databases
+
+**Pinecone Integration:**
+```typescript
+// src/services/search/vector-search.service.ts
+import { Pinecone } from '@pinecone-database/pinecone';
+import { AIContentService } from '../ai/openai.service';
+
+const pinecone = new Pinecone({
+  apiKey: process.env.PINECONE_API_KEY!,
+});
+
+export class VectorSearchService {
+  private index = pinecone.Index(process.env.PINECONE_INDEX_NAME!);
+  private aiService = new AIContentService();
+
+  /**
+   * Index content for semantic search
+   */
+  async indexContent(id: string, text: string, metadata: Record<string, any>) {
+    const embedding = await this.aiService.generateEmbedding(text);
+
+    await this.index.upsert([
+      {
+        id,
+        values: embedding,
+        metadata: {
+          text,
+          ...metadata,
+          indexedAt: new Date().toISOString(),
+        },
+      },
+    ]);
+  }
+
+  /**
+   * Semantic search - find similar content
+   */
+  async search(query: string, topK: number = 5) {
+    const queryEmbedding = await this.aiService.generateEmbedding(query);
+
+    const results = await this.index.query({
+      vector: queryEmbedding,
+      topK,
+      includeMetadata: true,
+    });
+
+    return results.matches.map((match) => ({
+      id: match.id,
+      score: match.score,
+      text: match.metadata?.text,
+      metadata: match.metadata,
+    }));
+  }
+
+  /**
+   * Batch indexing for large datasets
+   */
+  async batchIndex(documents: Array<{ id: string; text: string; metadata: any }>) {
+    const batchSize = 100;
+    for (let i = 0; i < documents.length; i += batchSize) {
+      const batch = documents.slice(i, i + batchSize);
+
+      const vectors = await Promise.all(
+        batch.map(async (doc) => ({
+          id: doc.id,
+          values: await this.aiService.generateEmbedding(doc.text),
+          metadata: { text: doc.text, ...doc.metadata },
+        }))
+      );
+
+      await this.index.upsert(vectors);
+    }
+  }
+}
+```
+
+**Alternative: Weaviate Integration:**
+```typescript
+// src/services/search/weaviate.service.ts
+import weaviate, { WeaviateClient } from 'weaviate-ts-client';
+
+export class WeaviateService {
+  private client: WeaviateClient;
+
+  constructor() {
+    this.client = weaviate.client({
+      scheme: 'https',
+      host: process.env.WEAVIATE_HOST!,
+      apiKey: new weaviate.ApiKey(process.env.WEAVIATE_API_KEY!),
+    });
+  }
+
+  async semanticSearch(query: string, className: string, topK: number = 5) {
+    const response = await this.client.graphql
+      .get()
+      .withClassName(className)
+      .withNearText({ concepts: [query] })
+      .withLimit(topK)
+      .withFields('content _additional { certainty }')
+      .do();
+
+    return response.data.Get[className];
+  }
+
+  async addDocument(className: string, properties: Record<string, any>) {
+    await this.client.data
+      .creator()
+      .withClassName(className)
+      .withProperties(properties)
+      .do();
+  }
+}
+```
+
+#### RAG (Retrieval-Augmented Generation)
+
+**RAG Implementation:**
+```typescript
+// src/services/ai/rag.service.ts
+import { VectorSearchService } from '../search/vector-search.service';
+import { AIContentService } from './openai.service';
+
+export class RAGService {
+  private vectorSearch = new VectorSearchService();
+  private aiService = new AIContentService();
+
+  /**
+   * Answer questions using RAG pattern
+   */
+  async answerQuestion(question: string, topK: number = 3): Promise<string> {
+    // 1. Retrieve relevant context from vector database
+    const relevantDocs = await this.vectorSearch.search(question, topK);
+
+    // 2. Build context from retrieved documents
+    const context = relevantDocs
+      .map((doc, i) => `Document ${i + 1} (relevance: ${(doc.score * 100).toFixed(1)}%):\n${doc.text}`)
+      .join('\n\n');
+
+    // 3. Generate answer using retrieved context
+    const prompt = `Based on the following context, answer the question.
+
+Context:
+${context}
+
+Question: ${question}
+
+Answer:`;
+
+    const answer = await this.aiService.generateContent(prompt);
+
+    return answer;
+  }
+
+  /**
+   * Chat with context from knowledge base
+   */
+  async chat(
+    message: string,
+    conversationHistory: Array<{ role: string; content: string }> = []
+  ): Promise<string> {
+    // Retrieve relevant context
+    const relevantDocs = await this.vectorSearch.search(message, 5);
+    const context = relevantDocs.map((doc) => doc.text).join('\n\n');
+
+    // Build system message with context
+    const systemMessage = `You are a helpful AI assistant. Use the following context to inform your responses:
+
+${context}
+
+If the context doesn't contain relevant information, use your general knowledge but mention that.`;
+
+    const messages = [
+      { role: 'system', content: systemMessage },
+      ...conversationHistory,
+      { role: 'user', content: message },
+    ];
+
+    // Generate response (implementation depends on AI provider)
+    const response = await this.aiService.generateContent(message, context);
+
+    return response;
+  }
+}
+```
+
+#### AI-Powered Features
+
+**Content Summarization:**
+```typescript
+// src/services/ai/summarization.service.ts
+export class SummarizationService {
+  private aiService = new AIContentService();
+
+  async summarize(text: string, maxLength: number = 150): Promise<string> {
+    const prompt = `Summarize the following text in approximately ${maxLength} words. Focus on the key points:
+
+${text}
+
+Summary:`;
+
+    return await this.aiService.generateContent(prompt);
+  }
+
+  async extractKeyPoints(text: string): Promise<string[]> {
+    const prompt = `Extract 3-5 key points from the following text as a JSON array:
+
+${text}
+
+Return format: ["point 1", "point 2", "point 3"]`;
+
+    const response = await this.aiService.generateContent(prompt);
+    return JSON.parse(response);
+  }
+}
+```
+
+**Sentiment Analysis:**
+```typescript
+// src/services/ai/sentiment.service.ts
+export class SentimentService {
+  private aiService = new AIContentService();
+
+  async analyzeSentiment(text: string): Promise<{
+    sentiment: 'positive' | 'negative' | 'neutral';
+    confidence: number;
+    explanation: string;
+  }> {
+    const prompt = `Analyze the sentiment of the following text. Return JSON with:
+- sentiment: "positive", "negative", or "neutral"
+- confidence: 0.0 to 1.0
+- explanation: brief explanation
+
+Text: "${text}"
+
+JSON:`;
+
+    const response = await this.aiService.generateContent(prompt);
+    return JSON.parse(response);
+  }
+
+  async moderateContent(text: string): Promise<{
+    appropriate: boolean;
+    issues: string[];
+    severity: 'none' | 'low' | 'medium' | 'high';
+  }> {
+    const prompt = `Analyze this text for inappropriate content (hate speech, violence, adult content, spam).
+
+Text: "${text}"
+
+Return JSON: { "appropriate": boolean, "issues": ["issue1", "issue2"], "severity": "none|low|medium|high" }`;
+
+    const response = await this.aiService.generateContent(prompt);
+    return JSON.parse(response);
+  }
+}
+```
+
+**Code Generation:**
+```typescript
+// src/services/ai/code-gen.service.ts
+export class CodeGenerationService {
+  private aiService = new AIContentService();
+
+  async generateCode(description: string, language: string): Promise<string> {
+    const prompt = `Generate ${language} code for the following requirement:
+
+${description}
+
+Return only the code without explanation.`;
+
+    return await this.aiService.generateContent(prompt);
+  }
+
+  async explainCode(code: string, language: string): Promise<string> {
+    const prompt = `Explain what this ${language} code does in simple terms:
+
+\`\`\`${language}
+${code}
+\`\`\`
+
+Explanation:`;
+
+    return await this.aiService.generateContent(prompt);
+  }
+
+  async suggestImprovements(code: string, language: string): Promise<string[]> {
+    const prompt = `Suggest improvements for this ${language} code. Return as JSON array:
+
+\`\`\`${language}
+${code}
+\`\`\`
+
+JSON array of suggestions:`;
+
+    const response = await this.aiService.generateContent(prompt);
+    return JSON.parse(response);
+  }
+}
+```
+
+**Image Generation:**
+```typescript
+// src/services/ai/image-gen.service.ts
+import OpenAI from 'openai';
+
+export class ImageGenerationService {
+  private openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+
+  async generateImage(prompt: string, size: '256x256' | '512x512' | '1024x1024' = '1024x1024') {
+    const response = await this.openai.images.generate({
+      model: 'dall-e-3',
+      prompt,
+      n: 1,
+      size,
+      quality: 'standard',
+    });
+
+    return {
+      url: response.data[0].url,
+      revisedPrompt: response.data[0].revised_prompt,
+    };
+  }
+
+  async editImage(imageUrl: string, prompt: string) {
+    // Requires image file download and upload
+    const response = await this.openai.images.edit({
+      image: await this.downloadImage(imageUrl),
+      prompt,
+      n: 1,
+      size: '1024x1024',
+    });
+
+    return response.data[0].url;
+  }
+
+  private async downloadImage(url: string): Promise<File> {
+    // Implementation to download and convert to File object
+    throw new Error('Not implemented');
+  }
+}
+```
+
+#### AI Rate Limiting & Cost Control
+
+**Rate Limiting for AI Endpoints:**
+```typescript
+// src/middleware/ai-rate-limit.middleware.ts
+import { Request, Response, NextFunction } from 'express';
+import Redis from 'ioredis';
+
+const redis = new Redis(process.env.REDIS_URL!);
+
+export async function aiRateLimitMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  const userId = req.user?.id;
+  if (!userId) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  const key = `ai:rate_limit:${userId}`;
+  const limit = parseInt(process.env.AI_RATE_LIMIT_REQUESTS || '10');
+  const window = parseInt(process.env.AI_RATE_LIMIT_WINDOW || '3600'); // 1 hour
+
+  const current = await redis.incr(key);
+
+  if (current === 1) {
+    await redis.expire(key, window);
+  }
+
+  if (current > limit) {
+    return res.status(429).json({
+      error: 'AI usage limit exceeded',
+      limit,
+      reset: await redis.ttl(key),
+    });
+  }
+
+  // Add usage headers
+  res.setHeader('X-AI-Limit', limit.toString());
+  res.setHeader('X-AI-Remaining', (limit - current).toString());
+  res.setHeader('X-AI-Reset', (await redis.ttl(key)).toString());
+
+  next();
+}
+```
+
+**Cost Tracking:**
+```typescript
+// src/services/ai/cost-tracker.service.ts
+import { prisma } from '../prisma';
+
+export class AICostTracker {
+  /**
+   * Track AI API usage and costs
+   */
+  async trackUsage(params: {
+    userId: string;
+    provider: 'openai' | 'anthropic' | 'pinecone';
+    operation: string;
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    cost: number;
+  }) {
+    await prisma.aIUsage.create({
+      data: {
+        userId: params.userId,
+        provider: params.provider,
+        operation: params.operation,
+        model: params.model,
+        inputTokens: params.inputTokens,
+        outputTokens: params.outputTokens,
+        totalTokens: params.inputTokens + params.outputTokens,
+        estimatedCost: params.cost,
+        timestamp: new Date(),
+      },
+    });
+  }
+
+  /**
+   * Get user's AI usage summary
+   */
+  async getUserUsageSummary(userId: string, periodDays: number = 30) {
+    const since = new Date();
+    since.setDate(since.getDate() - periodDays);
+
+    const usage = await prisma.aIUsage.aggregate({
+      where: {
+        userId,
+        timestamp: { gte: since },
+      },
+      _sum: {
+        totalTokens: true,
+        estimatedCost: true,
+      },
+      _count: {
+        id: true,
+      },
+    });
+
+    return {
+      totalRequests: usage._count.id,
+      totalTokens: usage._sum.totalTokens || 0,
+      totalCost: usage._sum.estimatedCost || 0,
+      periodDays,
+    };
+  }
+
+  /**
+   * Calculate cost based on model and tokens
+   */
+  calculateCost(provider: string, model: string, inputTokens: number, outputTokens: number): number {
+    const pricing: Record<string, { input: number; output: number }> = {
+      'gpt-4-turbo-preview': { input: 0.01 / 1000, output: 0.03 / 1000 },
+      'gpt-3.5-turbo': { input: 0.0005 / 1000, output: 0.0015 / 1000 },
+      'text-embedding-3-small': { input: 0.00002 / 1000, output: 0 },
+      'claude-3-5-sonnet-20241022': { input: 0.003 / 1000, output: 0.015 / 1000 },
+    };
+
+    const modelPricing = pricing[model] || { input: 0, output: 0 };
+    return inputTokens * modelPricing.input + outputTokens * modelPricing.output;
+  }
+}
+```
+
+**AI Usage Schema:**
+```prisma
+// schema.prisma
+model AIUsage {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  provider      String   // openai, anthropic, pinecone
+  operation     String   // generate, embed, search
+  model         String   // gpt-4, claude-3, etc.
+  inputTokens   Int      @map("input_tokens")
+  outputTokens  Int      @map("output_tokens")
+  totalTokens   Int      @map("total_tokens")
+  estimatedCost Float    @map("estimated_cost")
+  timestamp     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, timestamp])
+  @@index([provider, timestamp])
+  @@map("ai_usage")
+}
+```
+
+#### API Endpoints
+
+**AI Content Generation Endpoint:**
+```typescript
+// src/routes/ai.routes.ts
+import express from 'express';
+import { AIContentService } from '../services/ai/openai.service';
+import { AICostTracker } from '../services/ai/cost-tracker.service';
+import { aiRateLimitMiddleware } from '../middleware/ai-rate-limit.middleware';
+import { authMiddleware } from '../middleware/auth.middleware';
+
+const router = express.Router();
+const aiService = new AIContentService();
+const costTracker = new AICostTracker();
+
+router.post('/generate', authMiddleware, aiRateLimitMiddleware, async (req, res) => {
+  try {
+    const { prompt, context } = req.body;
+
+    if (!prompt) {
+      return res.status(400).json({ error: 'Prompt is required' });
+    }
+
+    const content = await aiService.generateContent(prompt, context);
+
+    // Track usage and cost
+    const inputTokens = Math.ceil((prompt.length + (context?.length || 0)) / 4);
+    const outputTokens = Math.ceil(content.length / 4);
+    const cost = costTracker.calculateCost('openai', 'gpt-4-turbo-preview', inputTokens, outputTokens);
+
+    await costTracker.trackUsage({
+      userId: req.user!.id,
+      provider: 'openai',
+      operation: 'generate',
+      model: 'gpt-4-turbo-preview',
+      inputTokens,
+      outputTokens,
+      cost,
+    });
+
+    res.json({
+      content,
+      usage: {
+        inputTokens,
+        outputTokens,
+        totalTokens: inputTokens + outputTokens,
+        estimatedCost: cost,
+      },
+    });
+  } catch (error) {
+    console.error('AI generation error:', error);
+    res.status(500).json({ error: 'AI generation failed' });
+  }
+});
+
+router.get('/usage', authMiddleware, async (req, res) => {
+  try {
+    const days = parseInt(req.query.days as string) || 30;
+    const summary = await costTracker.getUserUsageSummary(req.user!.id, days);
+
+    res.json(summary);
+  } catch (error) {
+    console.error('Usage summary error:', error);
+    res.status(500).json({ error: 'Failed to fetch usage summary' });
+  }
+});
+
+export default router;
+```
+
+#### Environment Variables
+
+```env
+# AI/ML Integration - OpenAI
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4-turbo-preview
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+AI_MAX_TOKENS=1000
+AI_TEMPERATURE=0.7
+
+# AI/ML Integration - Anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Vector Database - Pinecone
+PINECONE_API_KEY=...
+PINECONE_ENVIRONMENT=us-east-1
+PINECONE_INDEX_NAME=your-index
+
+# Vector Database - Weaviate
+WEAVIATE_HOST=your-cluster.weaviate.network
+WEAVIATE_API_KEY=...
+
+# AI Rate Limiting (per user)
+AI_RATE_LIMIT_REQUESTS=10      # Max requests per window
+AI_RATE_LIMIT_WINDOW=3600      # Window in seconds (1 hour)
+
+# AI Cost Controls
+AI_MAX_COST_PER_USER_DAILY=5.00  # Max $5 per user per day
+AI_WARN_THRESHOLD=0.80            # Warn at 80% of limit
+```
+
+#### Security Best Practices
+
+```yaml
+AI/ML Security:
+  Rate Limiting:
+    - Per-user rate limits (10 requests/hour default)
+    - Per-endpoint rate limits
+    - Graduated limits based on user tier
+
+  Cost Controls:
+    - Track usage per user/organization
+    - Set spending limits (daily/monthly)
+    - Alert at 80% of budget
+    - Auto-disable at 100% of budget
+
+  Input Validation:
+    - Sanitize all user inputs
+    - Limit prompt length (max 4000 chars)
+    - Block malicious prompts (jailbreak attempts)
+    - Content moderation on inputs
+
+  Output Validation:
+    - Content moderation on AI outputs
+    - Filter sensitive information
+    - Verify JSON structure for structured outputs
+
+  Data Privacy:
+    - Never send PII to AI APIs (anonymize first)
+    - Log prompts/responses securely
+    - Allow users to opt-out of AI features
+    - Comply with AI regulations (EU AI Act)
+
+  API Key Management:
+    - Store keys in environment variables
+    - Rotate keys regularly (90 days)
+    - Use separate keys per environment
+    - Monitor for key leaks
+```
+
+#### AI/ML Monitoring
+
+**Monitoring Dashboard:**
+```typescript
+// Get AI metrics for monitoring
+const metrics = {
+  totalRequests: await redis.get('ai:total_requests'),
+  successRate: await redis.get('ai:success_rate'),
+  avgResponseTime: await redis.get('ai:avg_response_time'),
+  totalCost: await redis.get('ai:total_cost'),
+  topUsers: await redis.zrange('ai:top_users', 0, 9, 'WITHSCORES'),
+};
+```
+
+**CloudWatch Metrics:**
+```yaml
+AI/ML Metrics:
+  - AIRequestCount (by provider, model, user)
+  - AIResponseTime (P50, P95, P99)
+  - AIErrorRate (by error type)
+  - AITokensUsed (input, output, total)
+  - AICostPerHour (by provider)
+  - AIRateLimitExceeded (count)
+```
+
 ---
 
 ## 🧪 TESTING STRATEGY
