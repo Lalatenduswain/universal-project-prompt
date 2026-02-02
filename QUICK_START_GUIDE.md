@@ -67,18 +67,39 @@ Please generate:
 
 ## 🎯 Common Use Cases
 
-### Use Case 1: SaaS Web Application
+### Use Case 1: Multi-Tenant SaaS Web Application
 ```
 "Create a multi-tenant SaaS application using the Universal Project Prompt:
 
-Stack: Next.js 16.x + Express 5.x + PostgreSQL 18.1
-Features: User authentication, RBAC (Admin/User), subscription management, 
-         file uploads, admin dashboard, API with rate limiting
-Security: OWASP Top 10 2021 compliant, JWT auth, bcrypt passwords
-Compliance: GDPR, SOC 2
-Deployment: Docker + Cloudflare + Nginx
+Stack: Next.js 16.x + Express 5.x + PostgreSQL 18.1 + Redis 8.x
 
-Generate complete documentation and codebase structure."
+Multi-Tenancy:
+- Isolation: Shared table with tenant_id (Row-Level Security)
+- Identification: Subdomain-based (acme.myapp.com)
+- Customization: Per-tenant themes, features, workflows
+- Billing: Stripe subscription + usage-based metering
+
+Features:
+- User authentication with JWT + SSO (SAML, LDAP optional)
+- RBAC (Super Admin, Tenant Admin, Manager, User)
+- Subscription management with tiered plans (Free, Pro, Enterprise)
+- File uploads with per-tenant storage limits
+- Multi-channel notifications (Email, In-app, SMS)
+- Admin dashboard with usage analytics
+- API with per-tenant rate limiting
+- Internationalization (7 locales)
+
+Security: OWASP Top 10 2021 compliant, JWT auth, bcrypt passwords,
+         tenant isolation, cross-tenant access prevention
+Compliance: GDPR, SOC 2, ISO 27001
+Deployment: Docker + Cloudflare + Nginx, horizontal scaling ready
+
+Generate:
+1. Complete codebase structure
+2. All 28 documentation files
+3. Multi-tenant database schema
+4. Tenant provisioning workflow
+5. Usage tracking & billing integration"
 ```
 
 ### Use Case 2: Mobile Banking App
@@ -263,10 +284,10 @@ Skip frontend-specific docs.
 
 ### Generate All Documentation
 ```
-"Using the Universal Project Prompt, generate all 20 documentation files 
+"Using the Universal Project Prompt, generate all 28 documentation files
 for my [TYPE] project: [BRIEF DESCRIPTION]
 
-Required files:
+Core Documentation:
 1. README.md
 2. TODO.md
 3. INSTALLATION.md
@@ -280,13 +301,27 @@ Required files:
 11. TROUBLESHOOTING.md
 12. CLAUDE.md
 13. CLAUDE_ARCHIVE.md
-14. Compliance-GDPR.md
-15. Compliance-ISO27001.md
-16. Compliance-PCI-DSS.md
-17. Compliance-SOX.md
-18. Compliance-Master-Roadmap.md
-19. Security-Audit-Plan.md
-20. Phase7-Test-Report.md
+
+Enterprise Features:
+14. MULTI_TENANCY.md
+15. UPGRADE_GUIDE.md
+16. AUTHENTICATION_PROVIDERS.md (LDAP, SAML)
+17. NOTIFICATIONS.md
+18. INTERNATIONALIZATION.md
+19. SCHEDULED_JOBS.md
+20. PERFORMANCE_OPTIMIZATION.md
+
+Compliance:
+21. Compliance-GDPR.md
+22. Compliance-ISO27001.md
+23. Compliance-PCI-DSS.md
+24. Compliance-SOC2.md
+25. Compliance-SOX.md
+26. Compliance-NIST.md
+27. Compliance-Master-Roadmap.md
+
+Security:
+28. Security-Audit-Plan.md
 
 Use latest tech versions (as of Feb 2026) and include real examples."
 ```
@@ -556,6 +591,400 @@ Documentation:
 - ❌ Ignore security warnings
 - ❌ Deploy without testing
 - ❌ Store passwords in plain text
+
+---
+
+## 🔧 Installation Quick Start
+
+### Option 1: Automated Installation (Recommended)
+```bash
+# Clone the generated project
+cd your-project
+
+# Run automated setup
+./scripts/check-prerequisites.sh
+./scripts/setup-dev.sh
+
+# Verify installation
+npm run verify
+```
+
+### Option 2: Manual Installation
+```bash
+# Install dependencies
+npm install
+
+# Create .env file
+cp .env.example .env
+# Edit .env with your values
+
+# Setup database
+createdb your_app_dev
+npx prisma migrate dev --name init
+npx prisma generate
+
+# Start development server
+npm run dev
+```
+
+### Prerequisite Checklist
+```yaml
+System Requirements:
+  - CPU: 4+ cores
+  - RAM: 8GB+
+  - Disk: 50GB+ SSD
+
+Required Software:
+  - Node.js 24.x or 25.x
+  - PostgreSQL 18.1+
+  - Redis 8.x+
+  - Docker 29.x+ (optional but recommended)
+
+Port Availability:
+  - 3000 (application)
+  - 5432 (PostgreSQL)
+  - 6379 (Redis)
+```
+
+---
+
+## 🏢 Multi-Tenancy Decision Matrix
+
+### Choose Your Isolation Strategy
+
+**Shared Table (tenant_id column)**
+```yaml
+Best For:
+  - < 500 tenants
+  - Tenants of similar size
+  - SaaS with standard features
+  - Cost-sensitive deployments
+
+Pros:
+  - Lowest cost
+  - Simple deployment
+  - Efficient resource usage
+  - Easy cross-tenant analytics
+
+Cons:
+  - Limited isolation
+  - Noisy neighbor risk
+  - Harder compliance (some regulations)
+
+Implementation Complexity: Low
+Monthly Cost: $50-200 (single database)
+```
+
+**Separate Schema (tenant_001, tenant_002)**
+```yaml
+Best For:
+  - 50-1000 tenants
+  - Regulatory requirements
+  - B2B SaaS with custom needs
+  - Medium tenant isolation
+
+Pros:
+  - Better isolation
+  - Schema-level permissions
+  - Easier backup/restore per tenant
+  - Simpler migrations than separate DB
+
+Cons:
+  - Schema proliferation (max ~1000-2000)
+  - Complex schema switching
+  - Catalog bloat
+
+Implementation Complexity: Medium
+Monthly Cost: $200-500 (single database, multiple schemas)
+```
+
+**Separate Database (dedicated instance)**
+```yaml
+Best For:
+  - Enterprise customers (>$10k MRR)
+  - Strict compliance (HIPAA, PCI-DSS Level 1)
+  - High-value customers
+  - Geographic data residency
+
+Pros:
+  - Complete physical isolation
+  - Per-tenant performance tuning
+  - Compliance-ready
+  - Custom backup schedules
+
+Cons:
+  - Highest cost
+  - Management overhead
+  - Difficult cross-tenant analytics
+
+Implementation Complexity: High
+Monthly Cost: $50-500 per tenant
+```
+
+### Quick Start: Multi-Tenant SaaS
+```
+"Create a multi-tenant SaaS application using the Universal Project Prompt:
+
+Tenancy Strategy: Shared table with tenant_id
+Tenant Identification: Subdomain (acme.myapp.com)
+
+Features:
+- Tenant signup & provisioning
+- Subdomain-based routing
+- Per-tenant customization (logo, colors, features)
+- Usage tracking (API calls, storage, active users)
+- Billing integration with Stripe (subscription + usage-based)
+- Tenant admin dashboard
+
+Security:
+- Row-Level Security (PostgreSQL RLS)
+- Tenant isolation enforcement middleware
+- Cross-tenant access prevention tests
+
+Generate:
+1. Multi-tenant Prisma schema with tenant_id
+2. Tenant resolution middleware
+3. Usage tracking implementation
+4. Billing integration code
+5. MULTI_TENANCY.md guide"
+```
+
+---
+
+## 🔑 Enterprise Authentication Quick Start
+
+### LDAP/Active Directory Integration
+```
+"Add LDAP/Active Directory authentication to my application:
+
+LDAP Configuration:
+- URL: ldap://ad.company.com:389
+- Search Base: DC=company,DC=com
+- Group Mapping: AD groups → RBAC roles
+
+Features:
+- SSO with domain credentials
+- Automated user provisioning
+- Group synchronization (hourly)
+- Fallback to local auth
+- Admin can disable LDAP per user
+
+Generate:
+1. LDAP authentication middleware (ldapjs + passport-ldap)
+2. Group-to-role mapping configuration
+3. User sync job
+4. AUTHENTICATION_PROVIDERS.md guide
+5. Troubleshooting guide"
+```
+
+### SAML 2.0 SSO Integration
+```
+"Add SAML 2.0 SSO to my application:
+
+Identity Providers: Okta, Azure AD, Google Workspace
+
+Features:
+- SP-initiated and IdP-initiated login
+- Just-In-Time (JIT) user provisioning
+- Single Logout (SLO)
+- Multi-IdP support (per tenant)
+- SAML metadata endpoint
+
+Generate:
+1. SAML configuration with passport-saml
+2. Metadata generation endpoint
+3. JIT provisioning logic
+4. Multi-IdP tenant mapping
+5. SAML testing guide"
+```
+
+---
+
+## 📈 Scalability Quick Reference
+
+### Horizontal Scaling Setup
+```yaml
+Prerequisites:
+  - Stateless application (no server-side sessions)
+  - Redis for session storage
+  - Shared file storage (MinIO/S3)
+
+Load Balancer (Nginx):
+  Algorithm: least_conn
+  Health Check: /health endpoint every 30s
+  Instances: Start with 3 app servers
+
+Auto-Scaling Triggers:
+  - CPU > 70% for 5 minutes → Scale up
+  - CPU < 30% for 10 minutes → Scale down
+  - Min instances: 2
+  - Max instances: 10
+```
+
+### Performance Optimization Checklist
+```yaml
+Database:
+  - [ ] Connection pooling (min: 2, max: 50)
+  - [ ] Indexes on foreign keys and query filters
+  - [ ] EXPLAIN ANALYZE on slow queries (>50ms)
+  - [ ] Prisma query batching enabled
+  - [ ] Read replicas for analytics
+
+Caching:
+  - [ ] Redis caching for frequently accessed data
+  - [ ] Cache TTL: 5 minutes (standard), 1 hour (static)
+  - [ ] CDN for static assets (24-hour TTL)
+  - [ ] Browser caching headers configured
+
+API:
+  - [ ] Response compression (gzip, 1KB threshold)
+  - [ ] API pagination (max 100 items per page)
+  - [ ] N+1 query prevention
+  - [ ] Background jobs for heavy operations
+```
+
+### Quick Start: Add Horizontal Scaling
+```
+"Add horizontal scaling to my application using the Universal Project Prompt:
+
+Current: Single server
+Target: 3+ app servers behind load balancer
+
+Requirements:
+- Convert to stateless (Redis sessions)
+- Nginx load balancer configuration
+- Health check endpoint
+- Graceful shutdown handling
+- Auto-scaling documentation
+
+Generate:
+1. Redis session configuration
+2. Nginx upstream configuration
+3. Health check implementation
+4. docker-compose.scale.yml (3 replicas)
+5. PERFORMANCE_OPTIMIZATION.md guide"
+```
+
+---
+
+## 🔄 Upgrade Procedures Quick Reference
+
+### Zero-Downtime Deployment Process
+```yaml
+Blue-Green Deployment:
+  1. Deploy new version to "green" environment
+  2. Run database migrations (backward-compatible)
+  3. Health check green environment
+  4. Switch load balancer to green
+  5. Monitor for 15 minutes
+  6. Keep blue as rollback
+
+Canary Deployment:
+  1. Deploy to 5% of servers
+  2. Monitor error rates for 1 hour
+  3. If stable, deploy to 25%
+  4. Monitor for 2 hours
+  5. Deploy to 100%
+  6. Automatic rollback if error rate > 1%
+```
+
+### Database Migration Strategy
+```yaml
+Backward-Compatible Migrations:
+  ✅ Add new columns (with defaults)
+  ✅ Add new tables
+  ✅ Add indexes (concurrent mode)
+
+  ❌ Avoid in single migration:
+    - Remove columns (2-phase migration)
+    - Change column types (2-phase migration)
+    - Remove tables (2-phase migration)
+
+Multi-Phase Migration (Breaking Changes):
+  Phase 1: Add new column/table, dual-write
+  Deploy: Application writes to both old and new
+  Phase 2: Migrate data, verify
+  Deploy: Application reads from new
+  Phase 3: Remove old column/table
+```
+
+### Quick Start: Setup Zero-Downtime Deployment
+```
+"Setup zero-downtime deployment for my application:
+
+Strategy: Blue-green deployment
+Infrastructure: Docker containers + Nginx
+
+Requirements:
+- Health check endpoint (/health, /ready)
+- Graceful shutdown (30s timeout)
+- Database migration rollback scripts
+- Deployment automation script
+
+Generate:
+1. Health check implementation
+2. Graceful shutdown handling
+3. Blue-green deployment script
+4. Rollback procedures
+5. UPGRADE_GUIDE.md documentation"
+```
+
+---
+
+## 🌍 Internationalization Quick Start
+
+### Add Multi-Language Support
+```
+"Add internationalization (i18n) to my application:
+
+Locales: English (en), Spanish (es), French (fr), German (de)
+RTL Support: Add Arabic (ar)
+
+Features:
+- Auto-detect user locale (Accept-Language, browser)
+- User preference override
+- Translation management (Crowdin integration)
+- Date/time formatting per locale
+- Number/currency formatting
+- RTL layout support
+
+Generate:
+1. i18next configuration (backend + frontend)
+2. Translation file structure (/locales/en/common.json)
+3. Locale detection middleware
+4. Translation helper functions
+5. INTERNATIONALIZATION.md guide"
+```
+
+---
+
+## 🔔 Notifications Quick Start
+
+### Multi-Channel Notification System
+```
+"Add notification system to my application:
+
+Channels:
+- Email (transactional via SMTP)
+- In-app notifications (real-time via WebSocket)
+- SMS (Twilio)
+- Push notifications (Firebase Cloud Messaging)
+
+Features:
+- User notification preferences per channel
+- Notification templates (per type)
+- Delivery queue with retry logic
+- Notification history
+- Read receipts
+- Batch notifications
+
+Generate:
+1. Notification queue (Bull + Redis)
+2. Multi-channel delivery handlers
+3. Template management
+4. User preferences API
+5. NOTIFICATIONS.md guide"
+```
 
 ---
 

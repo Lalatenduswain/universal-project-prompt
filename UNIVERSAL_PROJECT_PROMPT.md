@@ -18,6 +18,544 @@
 
 ---
 
+## ⚙️ INSTALLATION & SETUP
+
+### System Requirements
+
+#### Hardware Requirements
+```yaml
+Minimum (Development):
+  CPU: 4 cores
+  RAM: 8GB
+  Disk: 50GB SSD
+  Network: 10 Mbps
+
+Recommended (Production):
+  CPU: 8+ cores
+  RAM: 16GB+
+  Disk: 200GB+ SSD (NVMe preferred)
+  Network: 100 Mbps+
+```
+
+#### Software Requirements
+```yaml
+Required:
+  - Node.js: 24.x (LTS) or 25.x (Current)
+  - PostgreSQL: 18.1+
+  - Redis: 8.x+ or Valkey 9.x
+  - Docker: 29.x+ (Engine)
+  - Docker Compose: 2.x+
+  - Git: 2.40+
+
+Optional (Based on Stack):
+  - Python: 3.13+ (if using FastAPI)
+  - nginx: 1.29.x (for production deployment)
+  - Certbot: 5.2.x (for SSL/TLS certificates)
+  - Jenkins: 2.546+ (for CI/CD)
+```
+
+### Pre-Installation Checklist
+
+**Automated Prerequisite Checker:**
+```bash
+# Run prerequisite check script
+./scripts/check-prerequisites.sh
+
+# Or for Windows
+.\scripts\check-prerequisites.ps1
+```
+
+**Manual Verification:**
+- [ ] Operating system is Linux, macOS, or Windows 10/11
+- [ ] All required ports are available (3000, 5432, 6379, 80, 443)
+- [ ] Sufficient disk space (50GB+ available)
+- [ ] Internet connection for package downloads
+- [ ] User has sudo/administrator privileges
+- [ ] Firewall rules configured for required ports
+- [ ] DNS/hostname resolution working
+
+### Installation Methods
+
+#### Method 1: Interactive Installation Wizard (Recommended)
+
+**Quick Start:**
+```bash
+# Clone repository
+git clone https://github.com/your-org/your-app.git
+cd your-app
+
+# Run installation wizard
+npx universal-setup init
+
+# The wizard will guide you through:
+# 1. Environment detection (OS, installed software)
+# 2. Missing dependency installation
+# 3. Database configuration
+# 4. Redis configuration
+# 5. Environment variable setup (.env generation)
+# 6. SSL certificate generation (development)
+# 7. Initial database migration
+# 8. Admin user creation
+# 9. Sample data loading (optional)
+# 10. Service startup
+# 11. Health check verification
+# 12. Next steps guidance
+```
+
+**Wizard Features:**
+- Automatic dependency detection
+- Smart defaults based on environment
+- Validation at each step
+- Rollback on failure
+- Detailed progress logging
+- Post-installation verification
+
+#### Method 2: Silent/Unattended Installation (CI/CD)
+
+**Configuration File:**
+```yaml
+# install-config.yml
+environment: production
+database:
+  host: localhost
+  port: 5432
+  name: appdb
+  user: appuser
+  password_env: DB_PASSWORD  # Read from environment
+redis:
+  host: localhost
+  port: 6379
+  password_env: REDIS_PASSWORD
+application:
+  port: 3000
+  jwt_secret_env: JWT_SECRET
+  admin_email: admin@company.com
+  admin_password_env: ADMIN_PASSWORD
+features:
+  enable_ssl: true
+  enable_monitoring: true
+  load_sample_data: false
+```
+
+**Execute Silent Installation:**
+```bash
+# Set secrets in environment
+export DB_PASSWORD="secure_db_password"
+export REDIS_PASSWORD="secure_redis_password"
+export JWT_SECRET="your_jwt_secret_here"
+export ADMIN_PASSWORD="secure_admin_password"
+
+# Run silent installation
+./scripts/setup-prod.sh --config install-config.yml --silent
+
+# Or use Docker-based approach
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+#### Method 3: Docker-Based Installation (Fastest)
+
+**Development Environment:**
+```bash
+# Quick start with Docker Compose
+docker-compose up -d
+
+# This starts:
+# - Application (Node.js)
+# - PostgreSQL database
+# - Redis cache
+# - nginx reverse proxy
+
+# Access application at http://localhost:3000
+```
+
+**Production Environment:**
+```bash
+# Use production compose file
+docker-compose -f docker-compose.prod.yml up -d
+
+# With environment file
+docker-compose --env-file .env.production -f docker-compose.prod.yml up -d
+```
+
+**Docker Compose Configuration:**
+```yaml
+# docker-compose.yml
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://user:pass@db:5432/appdb
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - db
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  db:
+    image: postgres:18.1
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=appdb
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=pass
+
+  redis:
+    image: redis:8-alpine
+    volumes:
+      - redis_data:/data
+    command: redis-server --requirepass redis_password
+
+volumes:
+  postgres_data:
+  redis_data:
+```
+
+### Post-Installation Configuration
+
+#### Security Hardening
+```bash
+# 1. Change default passwords
+psql -c "ALTER USER appuser WITH PASSWORD 'new_secure_password';"
+
+# 2. Configure firewall (UFW on Ubuntu)
+sudo ufw allow 22/tcp    # SSH
+sudo ufw allow 80/tcp    # HTTP
+sudo ufw allow 443/tcp   # HTTPS
+sudo ufw enable
+
+# 3. Disable password authentication for SSH
+sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+sudo systemctl restart sshd
+
+# 4. Set up fail2ban
+sudo apt install fail2ban
+sudo systemctl enable fail2ban
+
+# 5. Configure automatic security updates
+sudo apt install unattended-upgrades
+sudo dpkg-reconfigure --priority=low unattended-upgrades
+```
+
+#### Performance Optimization
+```bash
+# 1. Configure PostgreSQL for production
+sudo nano /etc/postgresql/18/main/postgresql.conf
+
+# Recommended settings:
+# shared_buffers = 4GB  (25% of RAM)
+# effective_cache_size = 12GB  (75% of RAM)
+# maintenance_work_mem = 1GB
+# max_connections = 200
+# work_mem = 16MB
+
+# 2. Configure Redis persistence
+redis-cli CONFIG SET save "900 1 300 10 60 10000"
+redis-cli CONFIG SET appendonly yes
+
+# 3. Enable nginx gzip compression
+sudo nano /etc/nginx/nginx.conf
+# Add: gzip on; gzip_types text/plain text/css application/json application/javascript;
+```
+
+#### Monitoring Setup
+```bash
+# 1. Set up log rotation
+sudo nano /etc/logrotate.d/app
+
+# Configuration:
+# /var/log/app/*.log {
+#   daily
+#   rotate 14
+#   compress
+#   delaycompress
+#   notifempty
+#   create 0640 appuser appuser
+#   sharedscripts
+#   postrotate
+#     systemctl reload app
+#   endscript
+# }
+
+# 2. Configure application monitoring
+# See SYSTEM MONITORING section for dashboard setup
+
+# 3. Set up health check endpoint monitoring
+# Use Uptime Robot, Pingdom, or internal monitoring tool
+```
+
+#### Auto-Start Configuration
+```bash
+# Create systemd service file
+sudo nano /etc/systemd/system/app.service
+```
+
+```ini
+[Unit]
+Description=Application Server
+After=network.target postgresql.service redis.service
+
+[Service]
+Type=simple
+User=appuser
+Group=appuser
+WorkingDirectory=/opt/app
+Environment="NODE_ENV=production"
+EnvironmentFile=/opt/app/.env
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=app
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# Enable and start service
+sudo systemctl daemon-reload
+sudo systemctl enable app
+sudo systemctl start app
+sudo systemctl status app
+```
+
+### Installation Verification
+
+#### Automated Verification Suite
+```bash
+# Run comprehensive verification tests
+npx universal-setup verify
+
+# Or use dedicated verification script
+./scripts/verify-installation.sh
+```
+
+**Verification Tests:**
+
+1. **Health Checks**
+```yaml
+Application Health:
+  - GET /health returns 200 OK
+  - Response time < 200ms
+  - All required services running
+
+Database Connectivity:
+  - PostgreSQL connection successful
+  - Can execute SELECT 1
+  - All migrations applied
+  - Database version correct (18.1+)
+
+Cache Connectivity:
+  - Redis connection successful
+  - Can SET and GET test keys
+  - Redis version correct (8.x+)
+```
+
+2. **Authentication Tests**
+```yaml
+User Registration:
+  - POST /api/auth/register with valid data
+  - User created in database
+  - Password hashed correctly (bcrypt)
+  - Welcome email sent (if configured)
+
+User Login:
+  - POST /api/auth/login with credentials
+  - JWT token returned
+  - Token validates correctly
+  - Refresh token mechanism works
+```
+
+3. **API Endpoint Tests**
+```yaml
+Rate Limiting:
+  - Verify rate limits enforced
+  - Check X-RateLimit-* headers
+  - Test 429 response on limit exceed
+
+CORS Configuration:
+  - Allowed origins configured
+  - Preflight requests handled
+  - Headers correctly set
+
+Security Headers:
+  - Strict-Transport-Security present
+  - X-Content-Type-Options: nosniff
+  - X-Frame-Options: DENY
+  - CSP headers configured
+```
+
+4. **File Upload Tests**
+```yaml
+Upload Functionality:
+  - POST /api/upload with file
+  - File size limit enforced (default 10MB)
+  - MIME type validation works
+  - File stored correctly (filesystem/S3)
+  - Malicious file detection active
+```
+
+5. **Security Tests**
+```yaml
+SQL Injection Prevention:
+  - Test common SQL injection payloads
+  - Verify parameterized queries used
+  - No database errors exposed
+
+XSS Prevention:
+  - Test common XSS payloads
+  - Verify input sanitization
+  - CSP blocks inline scripts
+
+CSRF Protection:
+  - CSRF tokens required
+  - Token validation enforced
+  - SameSite cookie attribute set
+```
+
+### Troubleshooting Guide
+
+#### Common Issues
+
+**1. Port Already in Use**
+```bash
+# Problem: Error: listen EADDRINUSE: address already in use :::3000
+
+# Solution 1: Find and kill process using port
+lsof -i :3000
+kill -9 <PID>
+
+# Solution 2: Change application port
+export PORT=3001
+# Or edit .env file: PORT=3001
+```
+
+**2. Database Connection Failed**
+```bash
+# Problem: Error: connect ECONNREFUSED 127.0.0.1:5432
+
+# Check PostgreSQL status
+sudo systemctl status postgresql
+
+# Check PostgreSQL logs
+sudo tail -f /var/log/postgresql/postgresql-18-main.log
+
+# Verify database exists
+sudo -u postgres psql -l
+
+# Create database if missing
+sudo -u postgres createdb appdb
+
+# Check connection string format
+# DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+```
+
+**3. Redis Connection Issues**
+```bash
+# Problem: Error: Redis connection refused
+
+# Check Redis status
+sudo systemctl status redis
+
+# Test Redis connection
+redis-cli ping  # Should return PONG
+
+# Check Redis authentication
+redis-cli -a your_password ping
+
+# Verify REDIS_URL in .env
+# REDIS_URL=redis://localhost:6379 or redis://:password@localhost:6379
+```
+
+**4. Permission Errors**
+```bash
+# Problem: EACCES: permission denied
+
+# Fix file permissions
+sudo chown -R $USER:$USER /path/to/app
+chmod -R 755 /path/to/app
+
+# Fix log directory permissions
+sudo mkdir -p /var/log/app
+sudo chown appuser:appuser /var/log/app
+```
+
+**5. SSL Certificate Issues**
+```bash
+# Problem: SSL certificate not valid
+
+# For development, generate self-signed certificate
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
+
+# For production, use Let's Encrypt
+sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
+
+# Auto-renewal
+sudo certbot renew --dry-run
+```
+
+**6. Environment Variables Not Loaded**
+```bash
+# Problem: Application can't find environment variables
+
+# Verify .env file exists
+ls -la .env
+
+# Check .env file format (no spaces around =)
+# ✅ CORRECT: DATABASE_URL=value
+# ❌ WRONG: DATABASE_URL = value
+
+# Ensure dotenv is loaded in code
+# require('dotenv').config();  // Must be at top of file
+```
+
+**7. Migration Errors**
+```bash
+# Problem: Database migration failed
+
+# Check migration status
+npx prisma migrate status
+
+# Reset database (CAUTION: deletes all data)
+npx prisma migrate reset
+
+# Apply specific migration
+npx prisma migrate deploy
+
+# Create new migration
+npx prisma migrate dev --name fix_schema
+```
+
+**8. High Memory Usage**
+```bash
+# Problem: Application consuming too much memory
+
+# Check memory usage
+free -h
+docker stats  # For containerized apps
+
+# Increase Node.js heap size
+node --max-old-space-size=4096 server.js
+
+# Or set in .env
+NODE_OPTIONS=--max-old-space-size=4096
+
+# Enable garbage collection logging
+node --trace-gc server.js
+```
+
+---
+
 ## 🏗️ TECHNOLOGY STACK SPECIFICATION
 
 ### Current Technology Versions (as of February 2026)
@@ -168,6 +706,846 @@ Backend (Same as Web):
 
 ---
 
+## 🏢 MULTI-TENANCY ARCHITECTURE
+
+### Overview & Use Cases
+
+**Multi-tenancy** is an architectural pattern where a single instance of the application serves multiple customers (tenants). Each tenant's data is isolated and remains invisible to other tenants.
+
+**Common Use Cases:**
+- B2B SaaS applications (team collaboration tools, project management, CRM)
+- Enterprise applications with multiple departments
+- White-label solutions for resellers
+- Educational platforms with multiple schools/organizations
+- Healthcare systems with multiple clinics
+
+**When to Use Multi-Tenancy:**
+- ✅ You have multiple customers with similar needs
+- ✅ You want to minimize operational costs
+- ✅ You need centralized updates and maintenance
+- ✅ Each customer needs data isolation
+- ✅ Customers have different feature/pricing tiers
+
+**When NOT to Use Multi-Tenancy:**
+- ❌ Each customer has wildly different requirements
+- ❌ Extreme performance isolation needed
+- ❌ Regulatory requirements mandate physical separation
+- ❌ You have only one customer (single-tenant is simpler)
+
+### Tenant Lifecycle Management
+
+```yaml
+Tenant Registration:
+  1. Customer signs up → Create tenant record
+  2. Provision database resources (schema/database based on tier)
+  3. Initialize tenant-specific data (settings, roles, default content)
+  4. Send welcome email with tenant URL
+  5. Activate tenant (status: active)
+
+Tenant Suspension:
+  - Reason: Payment failure, policy violation, user request
+  - Action: Set status to suspended, disable login, show suspension notice
+  - Data: Retained for grace period (typically 30 days)
+
+Tenant Cancellation:
+  - Soft delete: Mark as cancelled, retain data for recovery period (30 days)
+  - Hard delete: After 30 days, anonymize/delete all tenant data (GDPR compliance)
+  - Export: Offer data export before final deletion
+
+Tenant Upgrade/Downgrade:
+  - Update subscription tier
+  - Adjust feature flags
+  - Migrate data if needed (e.g., shared schema → separate database for enterprise upgrade)
+  - Update usage limits
+```
+
+### Data Isolation Strategies
+
+#### Strategy 1: Shared Database with tenant_id Column
+
+```yaml
+Pattern: Single database, shared tables, tenant_id discriminator column
+Complexity: Low
+Cost: Lowest
+Isolation: Application-level
+Recommended For: <500 tenants, similar tenant sizes, cost-sensitive projects
+
+Architecture:
+  - Single PostgreSQL database
+  - Every table includes tenant_id column (UUID)
+  - Application enforces tenant filtering on all queries
+  - Shared indexes include tenant_id as first column
+
+Pros:
+  - Lowest infrastructure cost
+  - Simplest deployment
+  - Efficient resource utilization
+  - Easy cross-tenant analytics
+  - Simple backup and restore
+
+Cons:
+  - Limited data isolation (application-enforced only)
+  - Noisy neighbor risk (one tenant can impact others)
+  - More complex queries (always filter by tenant_id)
+  - Compliance concerns (data co-mingling)
+  - Index bloat with many tenants
+```
+
+**Implementation Example (Prisma):**
+```prisma
+// schema.prisma
+model User {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  email     String
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@map("users")
+}
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  subdomain String   @unique
+  status    String   @default("active")
+  plan      String   @default("free")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  users User[]
+
+  @@map("tenants")
+}
+```
+
+**Row-Level Security (PostgreSQL):**
+```sql
+-- Enable RLS on users table
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+
+-- Create policy to enforce tenant isolation
+CREATE POLICY tenant_isolation ON users
+  USING (tenant_id = current_setting('app.current_tenant_id')::uuid);
+
+-- Set tenant context at connection time
+SET app.current_tenant_id = 'tenant-uuid-here';
+```
+
+**Middleware Implementation (Express):**
+```typescript
+// Prisma middleware for automatic tenant filtering
+prisma.$use(async (params, next) => {
+  const tenantId = getTenantIdFromContext(); // From request context
+
+  if (params.model) {
+    // Add tenantId to all queries
+    if (params.action === 'findMany' || params.action === 'findFirst') {
+      params.args.where = { ...params.args.where, tenantId };
+    }
+    if (params.action === 'create') {
+      params.args.data = { ...params.args.data, tenantId };
+    }
+    if (params.action === 'update' || params.action === 'delete') {
+      params.args.where = { ...params.args.where, tenantId };
+    }
+  }
+
+  return next(params);
+});
+```
+
+#### Strategy 2: Separate Schema Per Tenant
+
+```yaml
+Pattern: Single database, separate PostgreSQL schemas per tenant
+Complexity: Medium
+Cost: Medium
+Isolation: Database-level
+Recommended For: 50-1000 tenants, regulatory requirements, moderate isolation needs
+
+Architecture:
+  - Single PostgreSQL database
+  - Public schema: Tenant registry and shared data
+  - Tenant schemas: tenant_001, tenant_002, tenant_<uuid>, etc.
+  - Dynamic schema switching using search_path
+  - Each tenant schema contains full table structure
+
+Pros:
+  - Better data isolation (database-enforced)
+  - Schema-level permissions and access control
+  - Easier per-tenant backup and restore
+  - Logical separation visible in database
+  - Better noisy neighbor protection
+
+Cons:
+  - Schema proliferation (1000-2000 schema limit)
+  - Complex migrations (must run per schema)
+  - PostgreSQL catalog bloat with many schemas
+  - Cross-tenant queries more difficult
+  - Higher operational complexity
+
+Limits:
+  - PostgreSQL: ~1000-2000 schemas practical maximum
+  - Performance degrades with >500 schemas
+```
+
+**Implementation Example:**
+```typescript
+// Tenant schema creation
+async function provisionTenant(tenantId: string) {
+  const schemaName = `tenant_${tenantId.replace(/-/g, '_')}`;
+
+  await prisma.$executeRawUnsafe(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`);
+
+  // Run migrations for new schema
+  await prisma.$executeRawUnsafe(`
+    SET search_path TO "${schemaName}";
+    -- Create all tables in tenant schema
+    CREATE TABLE users (...);
+    CREATE TABLE projects (...);
+    -- etc.
+  `);
+
+  return schemaName;
+}
+
+// Dynamic schema switching middleware
+app.use(async (req, res, next) => {
+  const tenantId = await resolveTenantId(req);
+  const schemaName = `tenant_${tenantId.replace(/-/g, '_')}`;
+
+  // Set PostgreSQL search_path for this connection
+  await prisma.$executeRawUnsafe(`SET search_path TO "${schemaName}"`);
+
+  req.tenantSchema = schemaName;
+  next();
+});
+```
+
+**Schema Migration Script:**
+```bash
+#!/bin/bash
+# migrate-all-tenants.sh
+
+# Get all tenant schemas
+SCHEMAS=$(psql -t -c "SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'tenant_%'")
+
+for SCHEMA in $SCHEMAS; do
+  echo "Migrating schema: $SCHEMA"
+  psql -c "SET search_path TO $SCHEMA; $(cat migration.sql)"
+done
+```
+
+#### Strategy 3: Separate Database Per Tenant
+
+```yaml
+Pattern: Dedicated database per tenant (or dedicated database instance)
+Complexity: High
+Cost: Highest
+Isolation: Complete physical separation
+Recommended For: Enterprise customers, strict compliance (HIPAA, PCI-DSS), high-value tenants (>$10k MRR)
+
+Architecture:
+  - Dedicated PostgreSQL database per tenant
+  - Or dedicated database instance (separate server)
+  - Tenant routing layer directs requests to correct database
+  - Each tenant database is independent
+
+Pros:
+  - Maximum data isolation (physical separation)
+  - Per-tenant performance tuning
+  - Compliance-ready (HIPAA, PCI-DSS, FedRAMP)
+  - No noisy neighbor issues
+  - Easy per-tenant scaling
+  - Simple per-tenant backup/restore
+  - Can use tenant-specific database versions
+
+Cons:
+  - Highest infrastructure cost
+  - Complex connection pooling
+  - Difficult cross-tenant analytics
+  - Migration management overhead (per-tenant deploys)
+  - Monitoring complexity
+
+Cost Estimate:
+  - Managed database (AWS RDS): ~$100-500/month per tenant
+  - Suitable for enterprise tier (>$1000/month revenue per tenant)
+```
+
+**Implementation Example:**
+```typescript
+// Tenant database configuration
+interface TenantConfig {
+  id: string;
+  databaseUrl: string;
+  connectionPool: any;
+}
+
+const tenantDatabases = new Map<string, TenantConfig>();
+
+// Initialize tenant-specific database connection
+async function getTenantDatabase(tenantId: string) {
+  if (!tenantDatabases.has(tenantId)) {
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { databaseUrl: true }
+    });
+
+    const tenantPrisma = new PrismaClient({
+      datasources: { db: { url: tenant.databaseUrl } }
+    });
+
+    tenantDatabases.set(tenantId, { id: tenantId, connectionPool: tenantPrisma });
+  }
+
+  return tenantDatabases.get(tenantId)!.connectionPool;
+}
+
+// Middleware for tenant database routing
+app.use(async (req, res, next) => {
+  const tenantId = await resolveTenantId(req);
+  req.tenantDb = await getTenantDatabase(tenantId);
+  next();
+});
+
+// Usage in route handlers
+app.get('/api/users', async (req, res) => {
+  const users = await req.tenantDb.user.findMany();
+  res.json(users);
+});
+```
+
+#### Strategy 4: Hybrid Approach (Tier-Based)
+
+```yaml
+Pattern: Different isolation strategies based on tenant tier
+Complexity: High
+Cost: Optimized
+Isolation: Variable by tier
+Recommended For: SaaS with multiple pricing tiers, optimize cost vs isolation
+
+Architecture:
+  Free/Starter Tier: Shared table (Strategy 1)
+  Professional Tier: Separate schema (Strategy 2)
+  Enterprise Tier: Separate database (Strategy 3)
+
+Migration Path:
+  - Start tenants on shared table
+  - Upgrade to separate schema when reaching Professional tier
+  - Upgrade to separate database for Enterprise customers
+
+Pros:
+  - Cost-optimized for each tier
+  - Can offer isolation as paid feature
+  - Scales with customer value
+  - Flexibility for future growth
+
+Cons:
+  - Most complex to implement
+  - Requires migration tooling between strategies
+  - Different code paths for different tiers
+  - Testing complexity
+```
+
+**Tenant Migration Script:**
+```typescript
+async function migrateTenantToSeparateSchema(tenantId: string) {
+  // 1. Create new schema
+  const schemaName = await provisionTenant(tenantId);
+
+  // 2. Copy data from shared tables
+  await prisma.$executeRawUnsafe(`
+    INSERT INTO ${schemaName}.users
+    SELECT * FROM public.users WHERE tenant_id = '${tenantId}';
+  `);
+
+  // 3. Update tenant record
+  await prisma.tenant.update({
+    where: { id: tenantId },
+    data: { isolationStrategy: 'separate_schema', schemaName }
+  });
+
+  // 4. Verify data integrity
+  const oldCount = await prisma.user.count({ where: { tenantId } });
+  const newCount = await prisma.$queryRawUnsafe(`
+    SELECT COUNT(*) FROM ${schemaName}.users
+  `);
+
+  if (oldCount !== newCount[0].count) {
+    throw new Error('Data migration failed: count mismatch');
+  }
+
+  // 5. Delete from shared tables (after grace period)
+  // await prisma.user.deleteMany({ where: { tenantId } });
+}
+```
+
+### Tenant Identification & Resolution
+
+**1. Subdomain-Based (Recommended for B2B)**
+```
+https://acme.myapp.com → tenantId = 'acme'
+https://widgets-inc.myapp.com → tenantId = 'widgets-inc'
+
+Pros: Clean URLs, professional, easy to identify
+Cons: Requires wildcard DNS, SSL certificates for each subdomain
+```
+
+**2. Path-Based**
+```
+https://myapp.com/acme/dashboard → tenantId = 'acme'
+https://myapp.com/widgets-inc/dashboard → tenantId = 'widgets-inc'
+
+Pros: Simple to implement, single SSL certificate
+Cons: Longer URLs, tenant in every route
+```
+
+**3. Header-Based (API-First)**
+```
+GET /api/users
+X-Tenant-Id: acme-uuid-here
+
+Pros: Works for APIs, no URL changes
+Cons: Not suitable for web UI, clients must set header
+```
+
+**4. JWT Claim (Recommended - Authoritative)**
+```javascript
+// JWT payload includes tenantId
+{
+  "sub": "user-uuid",
+  "tenantId": "tenant-uuid",
+  "email": "user@acme.com",
+  "role": "admin"
+}
+
+Pros: Secure, authoritative, works everywhere
+Cons: Requires authentication for tenant resolution
+```
+
+**Implementation: Multi-Source Tenant Resolution**
+```typescript
+async function resolveTenantId(req: Request): Promise<string> {
+  // 1. Try JWT claim (most authoritative)
+  if (req.user?.tenantId) {
+    return req.user.tenantId;
+  }
+
+  // 2. Try subdomain
+  const subdomain = req.hostname.split('.')[0];
+  if (subdomain !== 'www' && subdomain !== 'myapp') {
+    const tenant = await prisma.tenant.findUnique({
+      where: { subdomain },
+      select: { id: true, status: true }
+    });
+    if (tenant) {
+      if (tenant.status !== 'active') {
+        throw new Error('Tenant is suspended or cancelled');
+      }
+      return tenant.id;
+    }
+  }
+
+  // 3. Try X-Tenant-Id header (for API clients)
+  if (req.headers['x-tenant-id']) {
+    return req.headers['x-tenant-id'] as string;
+  }
+
+  // 4. Try path-based
+  const pathMatch = req.path.match(/^\/([^/]+)\//);
+  if (pathMatch) {
+    const tenant = await prisma.tenant.findFirst({
+      where: { subdomain: pathMatch[1] },
+      select: { id: true }
+    });
+    if (tenant) return tenant.id;
+  }
+
+  throw new Error('Unable to resolve tenant ID');
+}
+```
+
+### Tenant-Specific Customization
+
+#### UI Theming & Branding
+```yaml
+Customization Options:
+  - Logo (header, favicon)
+  - Primary/secondary colors
+  - Font family
+  - Custom CSS overrides
+  - White-label (remove platform branding)
+  - Custom domain (custom.acme.com → CNAME to platform)
+
+Storage:
+  - Database: tenant.settings JSONB column
+  - CDN: S3/MinIO for uploaded assets
+
+Implementation:
+  - React Context for theme
+  - CSS variables for colors
+  - Dynamic stylesheet loading
+```
+
+**Example:**
+```typescript
+// Theme loading
+function TenantThemeProvider({ children }: { children: React.ReactNode }) {
+  const { tenantId } = useTenant();
+  const { data: theme } = useQuery(['tenant-theme', tenantId], () =>
+    fetch(`/api/tenant/${tenantId}/theme`).then(r => r.json())
+  );
+
+  useEffect(() => {
+    if (theme) {
+      document.documentElement.style.setProperty('--primary-color', theme.primaryColor);
+      document.documentElement.style.setProperty('--secondary-color', theme.secondaryColor);
+      // Set favicon
+      const link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
+      if (link) link.href = theme.faviconUrl;
+    }
+  }, [theme]);
+
+  return <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>;
+}
+```
+
+#### Feature Flags Per Tenant
+```yaml
+Use Cases:
+  - Plan-based features (Professional tier gets advanced reports)
+  - Beta features (enable for specific tenants)
+  - Custom features (tenant-specific functionality)
+  - Gradual rollout (enable features incrementally)
+
+Storage:
+  - Database: tenant_features table
+  - Redis: Fast feature flag lookup
+
+Implementation:
+  - Middleware checks feature flags
+  - UI conditionally renders features
+  - API returns 403 for disabled features
+```
+
+**Example:**
+```typescript
+// Feature flag check
+async function hasFeature(tenantId: string, feature: string): Promise<boolean> {
+  const cacheKey = `tenant:${tenantId}:features`;
+
+  // Check Redis cache
+  let features = await redis.get(cacheKey);
+  if (!features) {
+    // Load from database
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      include: { features: true }
+    });
+    features = tenant.features.map(f => f.name);
+    await redis.setex(cacheKey, 3600, JSON.stringify(features));
+  } else {
+    features = JSON.parse(features);
+  }
+
+  return features.includes(feature);
+}
+
+// Middleware
+app.use('/api/advanced-reports', async (req, res, next) => {
+  const tenantId = req.user.tenantId;
+  if (!await hasFeature(tenantId, 'advanced_reports')) {
+    return res.status(403).json({ error: 'Feature not available on your plan' });
+  }
+  next();
+});
+```
+
+### Usage Tracking & Metering
+
+**Tracking Metrics:**
+```yaml
+API Calls:
+  - Total requests per tenant
+  - Requests per endpoint
+  - Requests per user
+
+Storage:
+  - File uploads (total size)
+  - Database size (MB)
+  - Number of records
+
+Active Users:
+  - Daily Active Users (DAU)
+  - Monthly Active Users (MAU)
+  - Concurrent sessions
+
+Feature Usage:
+  - Reports generated
+  - Emails sent
+  - API calls to specific features
+```
+
+**Implementation:**
+```typescript
+// Usage event tracking
+async function trackUsage(tenantId: string, metric: string, value: number = 1) {
+  const date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
+  // Increment in Redis (real-time)
+  await redis.hincrby(`usage:${tenantId}:${date}`, metric, value);
+
+  // Aggregate to database (hourly via cron)
+  // See SCHEDULED TASKS section
+}
+
+// Middleware for automatic API tracking
+app.use(async (req, res, next) => {
+  const tenantId = req.user?.tenantId;
+  if (tenantId) {
+    await trackUsage(tenantId, 'api_requests');
+    await trackUsage(tenantId, `api_requests:${req.path}`);
+  }
+  next();
+});
+
+// Check usage limits
+async function checkLimit(tenantId: string, metric: string): Promise<boolean> {
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    include: { plan: true }
+  });
+
+  const limit = tenant.plan.limits[metric]; // e.g., 1000 api_requests/month
+  const usage = await getMonthlyUsage(tenantId, metric);
+
+  if (usage >= limit) {
+    // Send warning at 80%
+    if (usage === Math.floor(limit * 0.8)) {
+      await sendLimitWarning(tenantId, metric, usage, limit);
+    }
+    return false; // Limit exceeded
+  }
+
+  return true; // Within limits
+}
+```
+
+### Billing & Subscription Management
+
+**Subscription Tiers:**
+```yaml
+Free:
+  Price: $0/month
+  Users: 5
+  API Calls: 1,000/month
+  Storage: 1GB
+  Features: Basic
+
+Starter:
+  Price: $29/month
+  Users: 20
+  API Calls: 10,000/month
+  Storage: 10GB
+  Features: Basic + Email notifications
+
+Professional:
+  Price: $99/month
+  Users: 100
+  API Calls: 100,000/month
+  Storage: 100GB
+  Features: Basic + Premium + Advanced reports + Priority support
+  Isolation: Separate schema
+
+Enterprise:
+  Price: Custom
+  Users: Unlimited
+  API Calls: Unlimited
+  Storage: Unlimited
+  Features: All + Custom features + SLA + Dedicated support
+  Isolation: Separate database
+```
+
+**Stripe Integration:**
+```typescript
+// Create customer and subscription
+async function createSubscription(tenantId: string, planId: string) {
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+
+  // Create Stripe customer
+  const customer = await stripe.customers.create({
+    email: tenant.email,
+    metadata: { tenantId }
+  });
+
+  // Create subscription
+  const subscription = await stripe.subscriptions.create({
+    customer: customer.id,
+    items: [{ price: planId }],
+    metadata: { tenantId }
+  });
+
+  // Update tenant
+  await prisma.tenant.update({
+    where: { id: tenantId },
+    data: {
+      stripeCustomerId: customer.id,
+      stripeSubscriptionId: subscription.id,
+      plan: planId,
+      subscriptionStatus: subscription.status
+    }
+  });
+}
+
+// Webhook handler for subscription updates
+app.post('/webhooks/stripe', async (req, res) => {
+  const event = req.body;
+
+  switch (event.type) {
+    case 'customer.subscription.updated':
+      const subscription = event.data.object;
+      await prisma.tenant.update({
+        where: { stripeSubscriptionId: subscription.id },
+        data: { subscriptionStatus: subscription.status }
+      });
+      break;
+
+    case 'invoice.payment_failed':
+      const invoice = event.data.object;
+      const tenant = await prisma.tenant.findFirst({
+        where: { stripeCustomerId: invoice.customer }
+      });
+      // Suspend tenant after grace period
+      await sendPaymentFailedEmail(tenant);
+      break;
+  }
+
+  res.json({ received: true });
+});
+```
+
+### Security Considerations
+
+**Tenant Isolation Checklist:**
+- [ ] All database queries filtered by tenantId
+- [ ] Row-Level Security (RLS) enabled for shared tables
+- [ ] Middleware enforces tenant context
+- [ ] File storage namespaced by tenantId
+- [ ] Cache keys include tenantId prefix
+- [ ] No cross-tenant foreign keys
+- [ ] Admin endpoints verify tenant ownership
+- [ ] Audit logs include tenantId
+
+**Testing Cross-Tenant Access Prevention:**
+```typescript
+describe('Tenant isolation', () => {
+  it('should not allow access to other tenant data', async () => {
+    const tenant1Token = await loginAs('user@tenant1.com');
+    const tenant2Token = await loginAs('user@tenant2.com');
+
+    // Create resource as tenant1
+    const res1 = await request(app)
+      .post('/api/projects')
+      .set('Authorization', `Bearer ${tenant1Token}`)
+      .send({ name: 'Tenant 1 Project' });
+
+    const projectId = res1.body.id;
+
+    // Try to access as tenant2 (should fail)
+    const res2 = await request(app)
+      .get(`/api/projects/${projectId}`)
+      .set('Authorization', `Bearer ${tenant2Token}`);
+
+    expect(res2.status).toBe(404); // Not found (not 403, to avoid info leakage)
+  });
+});
+```
+
+### Migration from Single-Tenant to Multi-Tenant
+
+**12-Week Migration Plan:**
+```yaml
+Weeks 1-2: Planning & Architecture
+  - Choose isolation strategy
+  - Design tenant model
+  - Plan data migration approach
+  - Set up development environment
+
+Weeks 3-4: Database Schema Changes
+  - Add tenant_id to all tables
+  - Create tenant table
+  - Set up Row-Level Security
+  - Write migration scripts
+
+Weeks 5-6: Application Code Updates
+  - Implement tenant middleware
+  - Update all queries with tenant filtering
+  - Add tenant context to request objects
+  - Implement tenant resolution logic
+
+Weeks 7-8: Authentication & Authorization
+  - Update JWT to include tenantId
+  - Add tenant validation
+  - Implement tenant-specific RBAC
+  - Add cross-tenant access prevention
+
+Weeks 9-10: Testing & Validation
+  - Write tenant isolation tests
+  - Test data migration scripts
+  - Performance testing with multiple tenants
+  - Security audit
+
+Weeks 11-12: Deployment & Monitoring
+  - Deploy to staging
+  - Migrate existing customer data
+  - Deploy to production
+  - Monitor for issues
+```
+
+**Zero-Downtime Data Migration:**
+```typescript
+// Migrate existing single-tenant data to multi-tenant schema
+async function migrateSingleTenantData() {
+  // 1. Create default tenant for existing data
+  const defaultTenant = await prisma.tenant.create({
+    data: {
+      name: 'Default Organization',
+      subdomain: 'default',
+      plan: 'enterprise'
+    }
+  });
+
+  // 2. Update all existing records with default tenantId
+  const tables = ['users', 'projects', 'tasks', 'comments'];
+
+  for (const table of tables) {
+    await prisma.$executeRawUnsafe(`
+      UPDATE ${table} SET tenant_id = '${defaultTenant.id}' WHERE tenant_id IS NULL
+    `);
+  }
+
+  // 3. Make tenant_id NOT NULL
+  for (const table of tables) {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE ${table} ALTER COLUMN tenant_id SET NOT NULL
+    `);
+  }
+
+  // 4. Create indexes
+  for (const table of tables) {
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX ${table}_tenant_id_idx ON ${table}(tenant_id)
+    `);
+  }
+}
+```
+
+---
+
 ## 🔐 SECURITY IMPLEMENTATION (OWASP Top 10 2021 Compliance)
 
 ### A01: Broken Access Control
@@ -201,6 +1579,575 @@ Account Security:
   - Progressive warnings at 3, 4, 5 attempts
   - IP tracking for suspicious activity
   - Login history audit trail
+
+Enterprise Authentication:
+  - Active Directory/LDAP integration
+  - SAML 2.0 single sign-on (SSO)
+  - OAuth 2.0 (Google, Microsoft, GitHub)
+  - Just-In-Time (JIT) user provisioning
+```
+
+#### Active Directory / LDAP Integration
+
+**Use Cases:**
+- Enterprise customers with existing AD infrastructure
+- Single sign-on with corporate credentials
+- Centralized user management
+- Automatic role assignment based on AD groups
+
+**Implementation Strategy:**
+```yaml
+Libraries:
+  - Node.js: ldapjs, passport-ldap
+  - Python: python-ldap, ldap3
+
+Configuration:
+  LDAP_URL: ldap://ad.company.com:389 or ldaps://ad.company.com:636 (SSL)
+  LDAP_BIND_DN: CN=AppService,OU=Services,DC=company,DC=com
+  LDAP_BIND_PASSWORD: service_account_password
+  LDAP_SEARCH_BASE: DC=company,DC=com
+  LDAP_SEARCH_FILTER: (&(objectClass=user)(sAMAccountName={{username}}))
+  LDAP_USER_ATTRIBUTES: mail,displayName,memberOf,title,department
+
+Connection:
+  - Use LDAPS (LDAP over SSL/TLS) for production
+  - Connection pooling: min=2, max=10 connections
+  - Connection timeout: 5 seconds
+  - Reconnect on connection loss
+  - Cache group memberships (TTL: 1 hour)
+```
+
+**Group-to-Role Mapping:**
+```typescript
+// AD group to application role mapping
+const groupRoleMapping = {
+  'CN=App-SuperAdmins,OU=Groups,DC=company,DC=com': 'super_admin',
+  'CN=App-Admins,OU=Groups,DC=company,DC=com': 'admin',
+  'CN=App-Agents,OU=Groups,DC=company,DC=com': 'agent',
+  'CN=App-Users,OU=Groups,DC=company,DC=com': 'user'
+};
+
+async function mapADGroupsToRoles(memberOf: string[]): Promise<string[]> {
+  const roles = memberOf
+    .map(group => groupRoleMapping[group])
+    .filter(role => role !== undefined);
+
+  // Default to 'user' role if no matching groups
+  return roles.length > 0 ? roles : ['user'];
+}
+```
+
+**LDAP Authentication Flow:**
+```typescript
+import ldap from 'ldapjs';
+
+async function authenticateWithLDAP(username: string, password: string) {
+  const client = ldap.createClient({
+    url: process.env.LDAP_URL!,
+    timeout: 5000,
+    connectTimeout: 5000
+  });
+
+  try {
+    // 1. Bind with service account
+    await new Promise((resolve, reject) => {
+      client.bind(process.env.LDAP_BIND_DN!, process.env.LDAP_BIND_PASSWORD!, (err) => {
+        if (err) reject(err);
+        else resolve(true);
+      });
+    });
+
+    // 2. Search for user
+    const searchFilter = process.env.LDAP_SEARCH_FILTER!.replace('{{username}}', username);
+    const searchResults = await new Promise<any>((resolve, reject) => {
+      client.search(process.env.LDAP_SEARCH_BASE!, {
+        filter: searchFilter,
+        scope: 'sub',
+        attributes: ['dn', 'mail', 'displayName', 'memberOf', 'title', 'department']
+      }, (err, res) => {
+        if (err) return reject(err);
+
+        const entries: any[] = [];
+        res.on('searchEntry', (entry) => entries.push(entry.object));
+        res.on('error', reject);
+        res.on('end', () => resolve(entries));
+      });
+    });
+
+    if (searchResults.length === 0) {
+      throw new Error('User not found in LDAP');
+    }
+
+    const userDN = searchResults[0].dn;
+    const userAttributes = searchResults[0];
+
+    // 3. Authenticate user with their credentials
+    await new Promise((resolve, reject) => {
+      const userClient = ldap.createClient({ url: process.env.LDAP_URL! });
+      userClient.bind(userDN, password, (err) => {
+        userClient.unbind();
+        if (err) reject(new Error('Invalid credentials'));
+        else resolve(true);
+      });
+    });
+
+    // 4. Map AD groups to application roles
+    const memberOf = userAttributes.memberOf || [];
+    const roles = await mapADGroupsToRoles(Array.isArray(memberOf) ? memberOf : [memberOf]);
+
+    // 5. Create or update user in local database (JIT provisioning)
+    const user = await prisma.user.upsert({
+      where: { email: userAttributes.mail },
+      update: {
+        name: userAttributes.displayName,
+        ldapDN: userDN,
+        department: userAttributes.department,
+        title: userAttributes.title,
+        lastLoginAt: new Date()
+      },
+      create: {
+        email: userAttributes.mail,
+        name: userAttributes.displayName,
+        ldapDN: userDN,
+        department: userAttributes.department,
+        title: userAttributes.title,
+        authProvider: 'ldap',
+        roles: { connect: roles.map(r => ({ name: r })) }
+      }
+    });
+
+    // 6. Generate JWT token
+    const token = jwt.sign(
+      { sub: user.id, email: user.email, roles },
+      process.env.JWT_SECRET!,
+      { expiresIn: '30m' }
+    );
+
+    return { user, token };
+
+  } finally {
+    client.unbind();
+  }
+}
+```
+
+**User Synchronization:**
+```typescript
+// Scheduled job to sync users from AD (run hourly)
+async function syncUsersFromLDAP() {
+  const client = ldap.createClient({ url: process.env.LDAP_URL! });
+
+  try {
+    await new Promise((resolve, reject) => {
+      client.bind(process.env.LDAP_BIND_DN!, process.env.LDAP_BIND_PASSWORD!, (err) => {
+        if (err) reject(err);
+        else resolve(true);
+      });
+    });
+
+    // Search for all users
+    const allUsers = await new Promise<any[]>((resolve, reject) => {
+      client.search(process.env.LDAP_SEARCH_BASE!, {
+        filter: '(&(objectClass=user)(mail=*))',
+        scope: 'sub',
+        attributes: ['dn', 'mail', 'displayName', 'memberOf', 'title', 'department']
+      }, (err, res) => {
+        if (err) return reject(err);
+
+        const entries: any[] = [];
+        res.on('searchEntry', (entry) => entries.push(entry.object));
+        res.on('error', reject);
+        res.on('end', () => resolve(entries));
+      });
+    });
+
+    // Sync each user
+    for (const ldapUser of allUsers) {
+      const roles = await mapADGroupsToRoles(
+        Array.isArray(ldapUser.memberOf) ? ldapUser.memberOf : [ldapUser.memberOf]
+      );
+
+      await prisma.user.upsert({
+        where: { email: ldapUser.mail },
+        update: {
+          name: ldapUser.displayName,
+          ldapDN: ldapUser.dn,
+          department: ldapUser.department,
+          title: ldapUser.title,
+          roles: { set: roles.map(r => ({ name: r })) }
+        },
+        create: {
+          email: ldapUser.mail,
+          name: ldapUser.displayName,
+          ldapDN: ldapUser.dn,
+          department: ldapUser.department,
+          title: ldapUser.title,
+          authProvider: 'ldap',
+          roles: { connect: roles.map(r => ({ name: r })) }
+        }
+      });
+    }
+
+    console.log(`Synced ${allUsers.length} users from LDAP`);
+  } finally {
+    client.unbind();
+  }
+}
+```
+
+**API Endpoints:**
+```yaml
+POST /api/auth/ldap/login:
+  Request:
+    username: string
+    password: string
+  Response:
+    user: User
+    token: string
+    refreshToken: string
+
+GET /api/auth/ldap/sync (Admin only):
+  Description: Trigger manual user synchronization
+  Response:
+    synced: number
+    errors: string[]
+```
+
+**Security Best Practices:**
+- ✅ Use LDAPS (SSL/TLS encryption) in production
+- ✅ Store service account credentials securely (HashiCorp Vault)
+- ✅ Use read-only service account with minimal permissions
+- ✅ Implement connection pooling to avoid connection exhaustion
+- ✅ Cache group memberships to reduce LDAP queries
+- ✅ Handle nested AD groups (recursive group resolution)
+- ✅ Log all authentication attempts for audit
+- ✅ Implement rate limiting on LDAP authentication endpoint
+
+#### SAML 2.0 Integration
+
+**Use Cases:**
+- Enterprise SSO with identity providers (Okta, Azure AD, OneLogin)
+- Federated authentication across multiple applications
+- Compliance requirements (SOC 2, ISO 27001)
+- Mobile app authentication via IdP
+
+**Implementation Strategy:**
+```yaml
+Libraries:
+  - Node.js: passport-saml, samlify
+  - Python: python-saml, python3-saml
+
+Service Provider (SP) Configuration:
+  SAML_ISSUER: https://app.company.com (Entity ID)
+  SAML_ENTRY_POINT: https://idp.company.com/saml2/sso (IdP SSO URL)
+  SAML_CALLBACK_URL: https://app.company.com/auth/saml/callback (ACS URL)
+  SAML_LOGOUT_URL: https://app.company.com/auth/saml/logout (SLO URL)
+  SAML_CERT_PATH: /path/to/idp-cert.pem (IdP public certificate)
+  SAML_PRIVATE_KEY_PATH: /path/to/sp-private-key.pem (SP private key)
+
+Identity Provider Support:
+  - Okta
+  - Azure AD (Microsoft Entra ID)
+  - OneLogin
+  - Google Workspace
+  - ADFS (Active Directory Federation Services)
+  - Auth0
+  - Ping Identity
+```
+
+**SAML Configuration (passport-saml):**
+```typescript
+import passport from 'passport';
+import { Strategy as SamlStrategy } from 'passport-saml';
+import fs from 'fs';
+
+passport.use(new SamlStrategy(
+  {
+    // Service Provider (SP) configuration
+    issuer: process.env.SAML_ISSUER!,
+    callbackUrl: process.env.SAML_CALLBACK_URL!,
+    entryPoint: process.env.SAML_ENTRY_POINT!,
+    cert: fs.readFileSync(process.env.SAML_CERT_PATH!, 'utf-8'),
+    privateKey: fs.readFileSync(process.env.SAML_PRIVATE_KEY_PATH!, 'utf-8'),
+
+    // SAML protocol settings
+    identifierFormat: 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
+    wantAssertionsSigned: true,
+    wantAuthnResponseSigned: true,
+    signatureAlgorithm: 'sha256',
+
+    // Additional options
+    passReqToCallback: true,
+    decryptionPvk: fs.readFileSync(process.env.SAML_PRIVATE_KEY_PATH!, 'utf-8')
+  },
+  async (req, profile, done) => {
+    try {
+      // Extract user attributes from SAML assertion
+      const email = profile.email || profile.nameID;
+      const name = profile.displayName || profile.name || email;
+      const groups = profile.groups || [];
+
+      // Map IdP groups to application roles
+      const roles = await mapIdPGroupsToRoles(groups);
+
+      // Just-In-Time (JIT) user provisioning
+      const user = await prisma.user.upsert({
+        where: { email },
+        update: {
+          name,
+          lastLoginAt: new Date(),
+          samlNameId: profile.nameID,
+          samlSessionIndex: profile.sessionIndex
+        },
+        create: {
+          email,
+          name,
+          authProvider: 'saml',
+          samlNameId: profile.nameID,
+          samlSessionIndex: profile.sessionIndex,
+          roles: { connect: roles.map(r => ({ name: r })) }
+        }
+      });
+
+      done(null, user);
+    } catch (error) {
+      done(error);
+    }
+  }
+));
+```
+
+**SAML Authentication Flow:**
+
+1. **SP-Initiated Flow (User starts from application):**
+```typescript
+// Initiate SAML login
+app.get('/auth/saml/login', passport.authenticate('saml', {
+  failureRedirect: '/login',
+  failureFlash: true
+}));
+
+// SAML callback (Assertion Consumer Service - ACS)
+app.post('/auth/saml/callback',
+  passport.authenticate('saml', { failureRedirect: '/login' }),
+  (req, res) => {
+    // Generate JWT token after successful SAML authentication
+    const token = jwt.sign(
+      { sub: req.user.id, email: req.user.email },
+      process.env.JWT_SECRET!,
+      { expiresIn: '30m' }
+    );
+
+    // Redirect to application with token
+    res.redirect(`/dashboard?token=${token}`);
+  }
+);
+```
+
+2. **IdP-Initiated Flow (User starts from identity provider):**
+```typescript
+// Accept IdP-initiated SAML assertions
+app.post('/auth/saml/callback',
+  passport.authenticate('saml', {
+    failureRedirect: '/login',
+    keepSessionInfo: true
+  }),
+  (req, res) => {
+    const token = jwt.sign(
+      { sub: req.user.id, email: req.user.email },
+      process.env.JWT_SECRET!,
+      { expiresIn: '30m' }
+    );
+
+    // Redirect to application or RelayState URL
+    const relayState = req.body.RelayState || '/dashboard';
+    res.redirect(`${relayState}?token=${token}`);
+  }
+);
+```
+
+**Single Logout (SLO):**
+```typescript
+// Initiate logout
+app.get('/auth/saml/logout', (req, res) => {
+  const strategy = passport._strategy('saml');
+
+  strategy.logout(req, (err, requestUrl) => {
+    if (err) {
+      return res.status(500).json({ error: 'Logout failed' });
+    }
+
+    // Clear local session
+    req.logout(() => {
+      // Redirect to IdP logout URL
+      res.redirect(requestUrl);
+    });
+  });
+});
+
+// SLO callback (from IdP)
+app.post('/auth/saml/logout/callback', (req, res) => {
+  // Handle logout response from IdP
+  req.logout(() => {
+    res.redirect('/login?logout=success');
+  });
+});
+```
+
+**SAML Metadata Endpoint:**
+```typescript
+// Service Provider metadata (for IdP configuration)
+app.get('/api/auth/saml/metadata', (req, res) => {
+  const strategy = passport._strategy('saml');
+
+  const metadata = strategy.generateServiceProviderMetadata(
+    fs.readFileSync(process.env.SAML_CERT_PATH!, 'utf-8'),
+    fs.readFileSync(process.env.SAML_CERT_PATH!, 'utf-8')
+  );
+
+  res.type('application/xml');
+  res.send(metadata);
+});
+```
+
+**Group/Role Mapping:**
+```typescript
+// Map IdP groups to application roles
+async function mapIdPGroupsToRoles(idpGroups: string[]): Promise<string[]> {
+  const roleMapping = {
+    'App-SuperAdmins': 'super_admin',
+    'App-Admins': 'admin',
+    'App-Agents': 'agent',
+    'App-Users': 'user'
+  };
+
+  const roles = idpGroups
+    .map(group => roleMapping[group])
+    .filter(role => role !== undefined);
+
+  return roles.length > 0 ? roles : ['user'];
+}
+```
+
+**Multi-Tenant SAML Configuration:**
+```typescript
+// Per-tenant SAML configuration
+async function getTenantSAMLConfig(tenantId: string) {
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: {
+      samlEnabled: true,
+      samlIssuer: true,
+      samlEntryPoint: true,
+      samlCertificate: true
+    }
+  });
+
+  if (!tenant?.samlEnabled) {
+    throw new Error('SAML not configured for tenant');
+  }
+
+  return new SamlStrategy({
+    issuer: tenant.samlIssuer,
+    entryPoint: tenant.samlEntryPoint,
+    cert: tenant.samlCertificate,
+    callbackUrl: `https://app.company.com/${tenantId}/auth/saml/callback`,
+    // ... other config
+  });
+}
+```
+
+**API Endpoints:**
+```yaml
+GET /api/auth/saml/metadata:
+  Description: SP metadata XML for IdP configuration
+  Response: application/xml
+
+GET /auth/saml/login:
+  Description: Initiate SAML authentication (SP-initiated)
+  Redirects: IdP login page
+
+POST /auth/saml/callback:
+  Description: Assertion Consumer Service (ACS) endpoint
+  Request: SAML assertion from IdP
+  Response: Redirect to application with JWT token
+
+GET /auth/saml/logout:
+  Description: Initiate SAML single logout
+  Redirects: IdP logout page
+
+POST /auth/saml/logout/callback:
+  Description: SLO callback from IdP
+  Response: Redirect to login page
+```
+
+**Supported Identity Providers Setup:**
+
+*Okta:*
+```yaml
+SAML_ENTRY_POINT: https://{your-domain}.okta.com/app/{app-id}/sso/saml
+SAML_ISSUER: http://www.okta.com/{app-id}
+Attribute Mappings:
+  email: user.email
+  firstName: user.firstName
+  lastName: user.lastName
+  groups: appuser.groups
+```
+
+*Azure AD:*
+```yaml
+SAML_ENTRY_POINT: https://login.microsoftonline.com/{tenant-id}/saml2
+SAML_ISSUER: https://sts.windows.net/{tenant-id}/
+Attribute Mappings:
+  email: user.mail
+  displayName: user.displayname
+  groups: user.groups
+```
+
+*Google Workspace:*
+```yaml
+SAML_ENTRY_POINT: https://accounts.google.com/o/saml2/idp?idpid={idp-id}
+SAML_ISSUER: https://accounts.google.com/o/saml2?idpid={idp-id}
+Attribute Mappings:
+  email: email
+  firstName: firstName
+  lastName: lastName
+```
+
+**Security Best Practices:**
+- ✅ Validate SAML assertions (signatures, timestamps)
+- ✅ Use HTTPS for all SAML endpoints
+- ✅ Implement replay attack prevention (assertion caching)
+- ✅ Set short assertion validity period (5 minutes)
+- ✅ Verify audience restriction (Entity ID)
+- ✅ Enable assertion encryption in production
+- ✅ Implement Single Logout (SLO) support
+- ✅ Log all SAML authentication events
+- ✅ Rotate signing certificates annually
+- ✅ Monitor for certificate expiration
+
+**Troubleshooting:**
+```yaml
+Common Issues:
+  1. Certificate mismatch:
+     - Verify IdP certificate is correct and not expired
+     - Check certificate format (PEM, no extra whitespace)
+
+  2. Clock skew errors:
+     - Sync server time with NTP
+     - Increase NotBefore/NotOnOrAfter tolerance
+
+  3. Signature validation failures:
+     - Ensure wantAssertionsSigned matches IdP settings
+     - Verify signature algorithm (SHA-256 recommended)
+
+  4. Redirect loop:
+     - Check callback URL matches IdP configuration exactly
+     - Ensure RelayState is preserved
+
+  5. IdP groups not mapped:
+     - Verify group attribute name in SAML assertion
+     - Check group mapping configuration
 ```
 
 ### A02: Cryptographic Failures
@@ -415,6 +2362,638 @@ SSRF Prevention:
   - Network segmentation
 ```
 
+### Security Operations & Maintenance
+
+#### Vulnerability Scanning Procedures
+
+**Automated Scanning Schedule:**
+```yaml
+Dependency Scanning:
+  Tool: npm audit, Snyk, or Dependabot
+  Frequency: Daily (automated in CI/CD pipeline)
+  Scope: All npm/yarn packages, Docker base images
+  Action: Auto-create PRs for security updates
+
+Container Scanning:
+  Tool: Trivy, Harbor, or Snyk Container
+  Frequency: On every image build
+  Scope: Docker images, base layers
+  Action: Block deployment if critical vulnerabilities found
+
+SAST (Static Application Security Testing):
+  Tool: SonarQube, Semgrep, or CodeQL
+  Frequency: On every commit (via CI/CD)
+  Scope: Source code, configuration files
+  Action: Flag high-severity issues in PR review
+
+DAST (Dynamic Application Security Testing):
+  Tool: OWASP ZAP, Burp Suite
+  Frequency: Weekly on staging environment
+  Scope: Running application, all endpoints
+  Action: Generate report, create tickets for findings
+
+Manual Security Audits:
+  Frequency: Quarterly
+  Scope: Architecture review, code review, penetration testing
+  Conducted by: Internal security team or external consultants
+```
+
+**npm audit Integration:**
+```bash
+# Run in CI/CD pipeline
+npm audit --audit-level=high
+
+# If vulnerabilities found, fail build
+if [ $? -ne 0 ]; then
+  echo "Security vulnerabilities found!"
+  exit 1
+fi
+
+# Generate audit report
+npm audit --json > security-audit.json
+
+# Auto-fix non-breaking updates
+npm audit fix
+
+# For breaking changes, create GitHub issue
+npm audit fix --dry-run --json | \
+  jq -r '.advisories | to_entries[] | "Issue: \(.value.title)"'
+```
+
+**Snyk Integration:**
+```yaml
+# .github/workflows/security-scan.yml
+name: Security Scan
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Run Snyk to check for vulnerabilities
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high --fail-on=all
+
+      - name: Upload result to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: snyk.sarif
+```
+
+**OWASP ZAP Scanning:**
+```bash
+#!/bin/bash
+# scripts/security-scan.sh
+
+# Start OWASP ZAP in daemon mode
+docker run -d --name zap -p 8080:8080 \
+  owasp/zap2docker-stable zap.sh -daemon -port 8080 -host 0.0.0.0
+
+# Wait for ZAP to start
+sleep 30
+
+# Run spider scan (discover endpoints)
+curl "http://localhost:8080/JSON/spider/action/scan/?url=https://staging.myapp.com"
+
+# Wait for spider to complete
+while [ $(curl -s "http://localhost:8080/JSON/spider/view/status" | jq -r '.status') != "100" ]; do
+  echo "Spider scan in progress..."
+  sleep 10
+done
+
+# Run active scan (vulnerability testing)
+curl "http://localhost:8080/JSON/ascan/action/scan/?url=https://staging.myapp.com"
+
+# Wait for active scan to complete
+while [ $(curl -s "http://localhost:8080/JSON/ascan/view/status" | jq -r '.status') != "100" ]; do
+  echo "Active scan in progress..."
+  sleep 30
+done
+
+# Generate HTML report
+curl "http://localhost:8080/OTHER/core/other/htmlreport" > zap-report.html
+
+# Generate JSON report
+curl "http://localhost:8080/JSON/core/view/alerts" > zap-alerts.json
+
+# Check for high-risk issues
+HIGH_RISK=$(jq '[.alerts[] | select(.risk == "High")] | length' zap-alerts.json)
+
+if [ "$HIGH_RISK" -gt 0 ]; then
+  echo "Found $HIGH_RISK high-risk vulnerabilities!"
+  exit 1
+fi
+
+# Cleanup
+docker stop zap && docker rm zap
+```
+
+**Penetration Testing:**
+```yaml
+Annual Penetration Test:
+  Scope:
+    - Web application (all user roles)
+    - API endpoints (authenticated and unauthenticated)
+    - Authentication & authorization
+    - Data validation and sanitization
+    - Session management
+    - File upload functionality
+    - Third-party integrations
+
+  Methodology:
+    - OWASP Testing Guide
+    - OWASP Top 10 verification
+    - Business logic testing
+    - Privilege escalation attempts
+    - Data exposure testing
+
+  Deliverables:
+    - Executive summary
+    - Detailed findings with CVSS scores
+    - Proof-of-concept exploits
+    - Remediation recommendations
+    - Retest after fixes applied
+
+  Follow-up:
+    - Remediation within SLA timeframes
+    - Retest to verify fixes
+    - Update security documentation
+```
+
+**Bug Bounty Program:**
+```yaml
+Program Setup:
+  Platform: HackerOne, Bugcrowd, or self-hosted
+  Scope:
+    In-Scope:
+      - *.myapp.com (production domains)
+      - api.myapp.com
+      - Mobile apps (iOS, Android)
+
+    Out-of-Scope:
+      - staging.myapp.com (staging environments)
+      - Third-party services
+      - Social engineering
+      - Physical attacks
+      - DoS/DDoS attacks
+
+  Rewards:
+    Critical (RCE, SQLi, Auth bypass): $5,000 - $10,000
+    High (XSS, IDOR, privilege escalation): $1,000 - $5,000
+    Medium (CSRF, information disclosure): $500 - $1,000
+    Low (rate limiting, minor issues): $100 - $500
+
+  Response SLA:
+    - Initial response: 2 business days
+    - Triage: 5 business days
+    - Resolution: Based on severity (see patch management)
+```
+
+**Vulnerability Disclosure Policy:**
+```markdown
+# Security Vulnerability Disclosure Policy
+
+We take security seriously. If you discover a security vulnerability, please:
+
+1. **Report It Privately**: Email security@myapp.com (PGP key available)
+2. **Provide Details**: Include steps to reproduce, impact assessment
+3. **Allow Time to Fix**: Give us 90 days before public disclosure
+4. **Don't Exploit**: Don't access or modify user data
+
+We will:
+- Acknowledge your report within 2 business days
+- Provide status updates every 7 days
+- Credit you in our security advisory (if desired)
+- Consider you for our bug bounty program
+
+Thank you for helping keep our users safe!
+```
+
+**Remediation SLA:**
+```yaml
+Vulnerability Severity (CVSS Score):
+  Critical (9.0-10.0):
+    Response Time: 4 hours
+    Patch Deployment: 24 hours
+    Exceptions: None (all hands on deck)
+
+  High (7.0-8.9):
+    Response Time: 8 hours
+    Patch Deployment: 7 days
+    Exceptions: May extend to 14 days with risk acceptance
+
+  Medium (4.0-6.9):
+    Response Time: 24 hours
+    Patch Deployment: 30 days
+    Exceptions: May include in next regular release
+
+  Low (0.1-3.9):
+    Response Time: 5 business days
+    Patch Deployment: 90 days
+    Exceptions: May defer if risk is negligible
+
+Emergency Patch Process:
+  1. Verify vulnerability and assess impact
+  2. Develop patch and test in staging
+  3. Schedule emergency maintenance window
+  4. Deploy patch to production
+  5. Verify fix and monitor for issues
+  6. Publish security advisory
+  7. Update documentation
+```
+
+#### Security Patch Management
+
+**Patch Evaluation Process:**
+```yaml
+Step 1: Identify Security Patches
+  Sources:
+    - npm security advisories
+    - GitHub Dependabot alerts
+    - CVE database (https://cve.mitre.org)
+    - Vendor security bulletins (PostgreSQL, Redis, nginx)
+    - Security mailing lists (Node.js, Docker)
+
+  Automated Monitoring:
+    - Dependabot creates PRs for vulnerable dependencies
+    - Snyk monitors and alerts on new vulnerabilities
+    - RSS feeds for CVE notifications
+
+Step 2: Assess Impact & Urgency
+  Evaluate:
+    - CVSS score (severity rating)
+    - Exploitability (is exploit public? is it being exploited?)
+    - Attack vector (network, local, physical)
+    - Privileges required (none, low, high)
+    - User interaction required
+    - Impact on confidentiality, integrity, availability
+
+  Prioritization:
+    Critical: Actively exploited, public exploit, high CVSS
+    High: Public exploit, affects core functionality
+    Medium: No public exploit, affects non-core functionality
+    Low: Low CVSS, minimal impact
+
+Step 3: Test in Staging Environment
+  Testing Checklist:
+    - [ ] Apply patch to staging environment
+    - [ ] Run full test suite (unit, integration, E2E)
+    - [ ] Manual testing of affected functionality
+    - [ ] Performance testing (check for regressions)
+    - [ ] Compatibility testing (integrations, third-party libs)
+    - [ ] Verify patch actually fixes the vulnerability
+
+  Test Duration:
+    Critical: 2-4 hours (expedited)
+    High: 1 day
+    Medium: 2-3 days
+    Low: 1 week
+
+Step 4: Schedule Deployment Window
+  Critical Patches:
+    - Deploy immediately (emergency change process)
+    - Notify users of brief downtime
+    - Deploy during business hours (full team available)
+
+  High Patches:
+    - Deploy within SLA window (7 days)
+    - Schedule during low-traffic hours (2-4 AM)
+    - Notify users 24 hours in advance
+
+  Medium/Low Patches:
+    - Bundle with regular releases
+    - Follow normal deployment schedule
+    - Notify users in release notes
+
+Step 5: Apply Patch & Verify
+  Deployment:
+    - Use blue-green or canary deployment
+    - Monitor metrics closely during rollout
+    - Have rollback plan ready
+
+  Verification:
+    - Verify vulnerability is fixed (rerun security scan)
+    - Monitor error rates and performance
+    - Check user reports for issues
+    - Document patch in change log
+
+Step 6: Document & Communicate
+  Internal Documentation:
+    - Update CHANGELOG.md with security fixes
+    - Document patch in incident report (if applicable)
+    - Update security documentation
+
+  External Communication:
+    - Publish security advisory (if user action required)
+    - Update support documentation
+    - Notify affected customers (if data breach)
+```
+
+**Emergency Patch Procedure (Critical Vulnerabilities):**
+```bash
+#!/bin/bash
+# Emergency patch deployment script
+
+# 1. Create emergency branch
+git checkout -b emergency/patch-critical-vuln-$(date +%Y%m%d)
+
+# 2. Apply patch
+npm update vulnerable-package@safe-version
+
+# 3. Run quick smoke tests
+npm run test:critical
+
+# 4. Build and deploy to staging
+docker build -t myapp:emergency .
+docker-compose -f docker-compose.staging.yml up -d
+
+# 5. Quick verification in staging
+./scripts/verify-patch.sh staging
+
+# 6. Deploy to production (blue-green)
+kubectl set image deployment/app app=myapp:emergency
+
+# 7. Monitor for 15 minutes
+echo "Monitoring production for issues..."
+sleep 900
+
+# 8. Check error rates
+ERROR_RATE=$(curl -s http://production/metrics | grep error_rate)
+if [ "$ERROR_RATE" -gt 0.01 ]; then
+  echo "Error rate too high, rolling back..."
+  kubectl rollout undo deployment/app
+  exit 1
+fi
+
+# 9. Complete deployment
+echo "Emergency patch deployed successfully"
+
+# 10. Publish security advisory
+./scripts/publish-security-advisory.sh
+```
+
+**Patch Documentation Template:**
+```markdown
+# Security Patch - [Vulnerability Name] - [Date]
+
+## Summary
+Brief description of the vulnerability and patch.
+
+## Affected Versions
+- Version X.Y.Z and earlier
+
+## Vulnerability Details
+- **CVE ID**: CVE-2026-XXXX
+- **CVSS Score**: 9.5 (Critical)
+- **Attack Vector**: Network
+- **Impact**: Remote Code Execution
+
+## Patch Information
+- **Fixed in Version**: X.Y.Z+1
+- **Release Date**: YYYY-MM-DD
+- **GitHub PR**: #1234
+
+## Upgrade Instructions
+```bash
+# For Docker deployments
+docker pull myapp:X.Y.Z+1
+docker-compose up -d
+
+# For npm installations
+npm install myapp@X.Y.Z+1
+```
+
+## Verification
+After upgrading, verify the fix by:
+1. Check application version: `curl https://myapp.com/api/version`
+2. Run security scan: `npm audit`
+3. Verify no vulnerable packages: `npm audit --audit-level=moderate`
+
+## Credits
+Thank you to [Researcher Name] for responsibly disclosing this vulnerability.
+
+## Questions?
+Contact security@myapp.com for any questions or concerns.
+```
+
+#### Enhanced Data Privacy Controls
+
+**Data Classification:**
+```yaml
+Public:
+  Description: Information intended for public access
+  Examples: Marketing materials, public documentation, blog posts
+  Encryption: Not required
+  Access Control: No restrictions
+
+Internal:
+  Description: Information for internal use only
+  Examples: Internal documentation, meeting notes, project plans
+  Encryption: In transit (TLS)
+  Access Control: Authenticated users only
+
+Confidential:
+  Description: Sensitive business information
+  Examples: Financial data, contracts, strategic plans, user data
+  Encryption: In transit (TLS) and at rest (AES-256)
+  Access Control: Role-based access, audit logging
+
+Restricted:
+  Description: Highly sensitive information requiring strict controls
+  Examples: Payment card data, health records, authentication credentials
+  Encryption: In transit (TLS 1.3) and at rest (AES-256), database-level encryption
+  Access Control: Need-to-know basis, MFA required, extensive audit logging
+```
+
+**Encryption Standards:**
+```yaml
+Data at Rest:
+  Algorithm: AES-256-GCM
+  Key Management: HashiCorp Vault or AWS KMS
+  Key Rotation: Every 90 days
+  Scope:
+    - Database: Transparent Data Encryption (TDE) for PostgreSQL
+    - File Storage: Encrypted S3 buckets or encrypted filesystem
+    - Backups: Encrypted with separate keys
+    - Logs: Encrypt sensitive fields before writing
+
+Data in Transit:
+  Protocol: TLS 1.3 (minimum TLS 1.2)
+  Certificate: Let's Encrypt or commercial CA
+  Cipher Suites: Modern, secure ciphers only (no RC4, 3DES, MD5)
+  Perfect Forward Secrecy: Enabled
+  HSTS: Enabled with preload
+  Scope:
+    - All HTTP traffic (enforce HTTPS)
+    - Database connections (SSL/TLS required)
+    - Redis connections (TLS enabled)
+    - Internal service communication (mTLS)
+
+Database-Level Encryption:
+  PostgreSQL pgcrypto:
+    - Encrypt PII fields (SSN, credit card, passport)
+    - Use symmetric encryption for bulk data
+    - Use asymmetric encryption for keys
+    - Store encryption keys in Vault
+
+  Example:
+    CREATE EXTENSION pgcrypto;
+
+    -- Encrypt data
+    INSERT INTO users (email, ssn_encrypted)
+    VALUES ('user@example.com',
+            pgp_sym_encrypt('123-45-6789', 'encryption-key'));
+
+    -- Decrypt data
+    SELECT email,
+           pgp_sym_decrypt(ssn_encrypted, 'encryption-key') AS ssn
+    FROM users;
+```
+
+**Data Retention Policies:**
+```yaml
+Active Data:
+  User Accounts: Indefinite (until user requests deletion)
+  Application Data: Indefinite (per business requirements)
+  Audit Logs: 2 years (compliance requirement)
+
+Deleted Data:
+  Soft Delete Period: 30 days (recoverable)
+  Hard Delete: After 30 days (permanent deletion)
+  Backup Retention: 30 days daily, 12 months monthly
+
+Logs:
+  Application Logs: 90 days
+  Access Logs: 1 year
+  Security Logs: 2 years
+  Compliance Logs: 7 years (SOX, PCI-DSS)
+
+Backups:
+  Daily Backups: 30 days
+  Weekly Backups: 3 months
+  Monthly Backups: 1 year
+  Annual Backups: 7 years
+
+Automated Cleanup:
+  - Daily cron job to delete expired data
+  - Weekly job to archive old logs
+  - Monthly job to purge old backups
+```
+
+**GDPR Compliance (Personal Data Handling):**
+```yaml
+Right to Access (Data Export):
+  Endpoint: GET /api/user/data-export
+  Format: JSON or CSV
+  Contents: All personal data, activity logs
+  Delivery: Download link or email
+  Processing Time: Within 30 days (GDPR requirement)
+
+Right to Erasure (Account Deletion):
+  Endpoint: DELETE /api/user/account
+  Process:
+    1. User confirms deletion (email verification)
+    2. Soft delete user account (30-day grace period)
+    3. Notify user of grace period
+    4. After 30 days, hard delete all personal data
+    5. Anonymize logs (replace user ID with "deleted-user")
+    6. Remove from backups (mark for deletion on restore)
+  Exceptions: Legal hold, ongoing investigation
+
+Right to Portability:
+  Endpoint: GET /api/user/data-export?format=portable
+  Format: Machine-readable JSON
+  Contents: User data in structured format
+  Processing Time: Immediately (up to 30 days)
+
+Right to Rectification:
+  Endpoint: PUT /api/user/profile
+  Process: User can update personal information
+  Verification: Email verification for email changes
+
+Consent Management:
+  - Track user consent for data processing
+  - Allow users to withdraw consent
+  - Granular consent (marketing, analytics, etc.)
+  - Audit trail of consent changes
+
+Data Breach Notification:
+  - Detect breach within 72 hours
+  - Notify supervisory authority within 72 hours
+  - Notify affected users without undue delay
+  - Document breach in incident register
+```
+
+**Data Anonymization for Analytics:**
+```typescript
+// Anonymize user data for analytics
+function anonymizeUserData(user: User): AnonymizedUser {
+  return {
+    userId: hashUserId(user.id),  // One-way hash
+    ageRange: getAgeRange(user.birthDate),  // 18-24, 25-34, etc.
+    country: user.country,  // Keep country for geo analytics
+    signupDate: truncateDate(user.createdAt, 'month'),  // Month precision only
+    // Remove: name, email, phone, address
+  };
+}
+
+// Use anonymized data for analytics
+const analyticsData = users.map(anonymizeUserData);
+await sendToAnalytics(analyticsData);
+```
+
+**Privacy by Design Checklist:**
+```yaml
+Data Minimization:
+  - [ ] Collect only necessary personal data
+  - [ ] No excessive data collection
+  - [ ] Clear purpose for each data point
+  - [ ] Regular review of collected data
+
+Purpose Limitation:
+  - [ ] Data used only for stated purpose
+  - [ ] No secondary use without consent
+  - [ ] Clear privacy policy
+  - [ ] User informed of data usage
+
+Storage Limitation:
+  - [ ] Data retained only as long as necessary
+  - [ ] Automated deletion of expired data
+  - [ ] Clear retention periods
+  - [ ] Regular data audits
+
+Security:
+  - [ ] Encryption at rest and in transit
+  - [ ] Access controls implemented
+  - [ ] Regular security audits
+  - [ ] Incident response plan
+
+Transparency:
+  - [ ] Clear privacy policy
+  - [ ] Data processing notices
+  - [ ] User rights documented
+  - [ ] Contact information provided
+
+User Rights:
+  - [ ] Access (data export)
+  - [ ] Rectification (data update)
+  - [ ] Erasure (account deletion)
+  - [ ] Portability (data download)
+  - [ ] Object (opt-out of processing)
+```
+
 ---
 
 ## 🛡️ RATE LIMITING CONFIGURATION
@@ -450,6 +3029,871 @@ Implementation:
   - X-RateLimit-* headers in responses
   - 429 Too Many Requests with Retry-After header
   - Progressive delays on repeated violations
+```
+
+---
+
+## ⚡ SCALABILITY & PERFORMANCE OPTIMIZATION
+
+### Horizontal Scaling Strategy
+
+**Stateless Application Design:**
+```yaml
+Principles:
+  - No local state stored on application servers
+  - Session data in Redis (shared across instances)
+  - File uploads to centralized storage (S3/MinIO)
+  - No server affinity required
+  - Identical application servers
+
+Benefits:
+  - Easy scale-out (add more servers)
+  - Zero-downtime deployments
+  - Fault tolerance (server failure)
+  - Load distribution
+```
+
+**Scaling Triggers:**
+```yaml
+Auto-Scaling Rules:
+  Scale Up (add instances):
+    - CPU usage > 70% for 5 minutes
+    - Memory usage > 80% for 5 minutes
+    - Request queue depth > 100
+    - Average response time > 500ms
+
+  Scale Down (remove instances):
+    - CPU usage < 30% for 10 minutes
+    - Memory usage < 50% for 10 minutes
+    - Request queue depth < 20
+    - Minimum instances: 2 (high availability)
+
+  Cooldown Period: 5 minutes (prevent flapping)
+```
+
+**Session Management:**
+```typescript
+// Redis-backed sessions (shared across instances)
+import session from 'express-session';
+import RedisStore from 'connect-redis';
+import { createClient } from 'redis';
+
+const redisClient = createClient({
+  url: process.env.REDIS_URL,
+  socket: {
+    reconnectStrategy: (retries) => Math.min(retries * 50, 500)
+  }
+});
+
+app.use(session({
+  store: new RedisStore({ client: redisClient }),
+  secret: process.env.SESSION_SECRET!,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: true,
+    httpOnly: true,
+    maxAge: 1800000 // 30 minutes
+  }
+}));
+```
+
+**Sticky Sessions vs Session Replication:**
+```yaml
+Sticky Sessions (IP Hash):
+  Pros: Simple, no session replication needed
+  Cons: Uneven load distribution, problematic with failures
+
+Session Replication (Redis):
+  Pros: Even load distribution, fault-tolerant
+  Cons: Slightly higher latency, Redis dependency
+  Recommended: Use Redis for production
+```
+
+### Load Balancing
+
+**Nginx Load Balancer Configuration:**
+```nginx
+# /etc/nginx/nginx.conf
+upstream app_servers {
+  # Load balancing algorithm
+  least_conn;  # Route to server with fewest connections
+
+  # Application servers
+  server app1.internal:3000 weight=1 max_fails=3 fail_timeout=30s;
+  server app2.internal:3000 weight=1 max_fails=3 fail_timeout=30s;
+  server app3.internal:3000 weight=1 max_fails=3 fail_timeout=30s;
+
+  # Health check
+  keepalive 32;
+}
+
+server {
+  listen 80;
+  server_name app.company.com;
+
+  # Redirect HTTP to HTTPS
+  return 301 https://$server_name$request_uri;
+}
+
+server {
+  listen 443 ssl http2;
+  server_name app.company.com;
+
+  # SSL configuration
+  ssl_certificate /etc/ssl/certs/app.company.com.crt;
+  ssl_certificate_key /etc/ssl/private/app.company.com.key;
+  ssl_protocols TLSv1.3;
+  ssl_prefer_server_ciphers on;
+
+  # Security headers
+  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+  add_header X-Frame-Options "DENY" always;
+  add_header X-Content-Type-Options "nosniff" always;
+
+  # Gzip compression
+  gzip on;
+  gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+  gzip_min_length 1000;
+
+  # Proxy configuration
+  location / {
+    proxy_pass http://app_servers;
+    proxy_http_version 1.1;
+
+    # Headers for backend
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # WebSocket support
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+
+    # Timeouts
+    proxy_connect_timeout 60s;
+    proxy_send_timeout 60s;
+    proxy_read_timeout 60s;
+
+    # Buffering
+    proxy_buffering on;
+    proxy_buffer_size 4k;
+    proxy_buffers 8 4k;
+  }
+
+  # Health check endpoint (bypass load balancing)
+  location /health {
+    proxy_pass http://app_servers/health;
+    access_log off;
+  }
+
+  # Static assets (cache)
+  location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg|woff|woff2)$ {
+    proxy_pass http://app_servers;
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+  }
+}
+```
+
+**Load Balancing Algorithms:**
+```yaml
+Round Robin (default):
+  - Requests distributed evenly in rotation
+  - Simple, predictable
+  - Use when: All servers have equal capacity
+
+Least Connections (least_conn):
+  - Routes to server with fewest active connections
+  - Better for long-lived connections
+  - Use when: Requests have variable duration
+
+IP Hash (ip_hash):
+  - Routes based on client IP (sticky sessions)
+  - Same client always goes to same server
+  - Use when: Session affinity required (not recommended)
+
+Weighted Load Balancing:
+  - Servers assigned weights based on capacity
+  - More powerful servers get more traffic
+  - Use when: Heterogeneous server specs
+```
+
+**Health Check Endpoints:**
+```typescript
+// Comprehensive health check
+app.get('/health', async (req, res) => {
+  const health = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    checks: {}
+  };
+
+  // Database check
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    health.checks.database = 'ok';
+  } catch (error) {
+    health.checks.database = 'error';
+    health.status = 'degraded';
+  }
+
+  // Redis check
+  try {
+    await redis.ping();
+    health.checks.redis = 'ok';
+  } catch (error) {
+    health.checks.redis = 'error';
+    health.status = 'degraded';
+  }
+
+  // Memory check
+  const memUsage = process.memoryUsage();
+  health.checks.memory = {
+    heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024) + 'MB',
+    heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024) + 'MB',
+    status: memUsage.heapUsed / memUsage.heapTotal < 0.9 ? 'ok' : 'warning'
+  };
+
+  res.status(health.status === 'ok' ? 200 : 503).json(health);
+});
+
+// Readiness check (K8s-style)
+app.get('/ready', async (req, res) => {
+  // Check if app is ready to serve traffic
+  const ready = await checkDatabaseConnection() && await checkRedisConnection();
+  res.status(ready ? 200 : 503).json({ ready });
+});
+```
+
+**Circuit Breaker Pattern:**
+```typescript
+import CircuitBreaker from 'opossum';
+
+// Wrap external API calls in circuit breaker
+const options = {
+  timeout: 3000, // 3 seconds
+  errorThresholdPercentage: 50, // Open circuit if 50% of requests fail
+  resetTimeout: 30000 // Try again after 30 seconds
+};
+
+const breaker = new CircuitBreaker(externalAPICall, options);
+
+breaker.on('open', () => console.log('Circuit breaker opened'));
+breaker.on('halfOpen', () => console.log('Circuit breaker half-open'));
+breaker.on('close', () => console.log('Circuit breaker closed'));
+
+// Use circuit breaker
+app.get('/api/external-data', async (req, res) => {
+  try {
+    const data = await breaker.fire(req.params);
+    res.json(data);
+  } catch (error) {
+    // Fallback when circuit is open
+    res.status(503).json({ error: 'Service temporarily unavailable' });
+  }
+});
+```
+
+**Graceful Shutdown:**
+```typescript
+// Handle shutdown signals
+let server;
+
+async function gracefulShutdown(signal) {
+  console.log(`Received ${signal}, shutting down gracefully...`);
+
+  // Stop accepting new connections
+  server.close(() => {
+    console.log('HTTP server closed');
+  });
+
+  // Close database connections
+  await prisma.$disconnect();
+
+  // Close Redis connections
+  await redis.quit();
+
+  // Exit after timeout
+  setTimeout(() => {
+    console.error('Forcing shutdown after timeout');
+    process.exit(1);
+  }, 10000); // 10 second timeout
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+server = app.listen(PORT);
+```
+
+### Database Optimization
+
+**Query Optimization Techniques:**
+```yaml
+1. Use EXPLAIN ANALYZE for slow queries:
+   - Identify sequential scans (should be index scans)
+   - Check rows returned vs rows scanned
+   - Look for expensive operations (sorts, joins)
+
+2. Avoid N+1 Queries:
+   Bad:
+     const users = await prisma.user.findMany();
+     for (const user of users) {
+       const posts = await prisma.post.findMany({ where: { userId: user.id } });
+     }
+
+   Good:
+     const users = await prisma.user.findMany({
+       include: { posts: true }  // Single query with JOIN
+     });
+
+3. Limit Result Sets:
+   - Always use LIMIT/OFFSET for pagination
+   - Default page size: 20-50 items
+   - Maximum page size: 100 items
+
+4. Select Only Required Columns:
+   - Use Prisma select to fetch specific fields
+   - Avoid SELECT * in production queries
+
+5. Use Database Indexes Strategically:
+   - Index foreign keys
+   - Index frequently queried columns
+   - Composite indexes for multi-column queries
+   - Avoid over-indexing (slows writes)
+```
+
+**Connection Pooling:**
+```typescript
+// Prisma connection pool configuration
+// prisma/schema.prisma
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["metrics"]
+}
+
+// Connection pool settings in DATABASE_URL
+// postgresql://user:password@localhost:5432/dbname?connection_limit=50&pool_timeout=2
+```
+
+**Connection Pool Sizing:**
+```yaml
+Development:
+  min: 2 connections
+  max: 10 connections
+
+Production:
+  Formula: (CPU cores * 2) + effective_spindle_count
+  Example (4 CPU cores): (4 * 2) + 1 = 9 connections per instance
+
+  Recommended:
+    min: 2-5 connections
+    max: 20-50 connections per application instance
+    idle_timeout: 30 seconds
+    connection_timeout: 2 seconds
+
+Multi-Instance:
+  Total connections = max_per_instance * number_of_instances
+  PostgreSQL max_connections: Set to total + 20% buffer
+  Example: 3 instances * 50 connections = 150 → set max_connections=180
+```
+
+**Read Replicas:**
+```typescript
+// Separate connection for read-only queries
+const readReplica = new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.DATABASE_READ_REPLICA_URL
+    }
+  }
+});
+
+// Route read queries to replica
+async function getUsers() {
+  return readReplica.user.findMany(); // Read from replica
+}
+
+// Route writes to primary
+async function createUser(data) {
+  return prisma.user.create({ data }); // Write to primary
+}
+```
+
+**Database Partitioning:**
+```sql
+-- Partition by tenant_id (multi-tenancy)
+CREATE TABLE users (
+  id UUID PRIMARY KEY,
+  tenant_id UUID NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+) PARTITION BY LIST (tenant_id);
+
+-- Create partitions for each tenant
+CREATE TABLE users_tenant_001 PARTITION OF users FOR VALUES IN ('tenant-uuid-001');
+CREATE TABLE users_tenant_002 PARTITION OF users FOR VALUES IN ('tenant-uuid-002');
+
+-- Partition by date range (time-series data)
+CREATE TABLE logs (
+  id BIGSERIAL,
+  message TEXT,
+  created_at TIMESTAMP NOT NULL
+) PARTITION BY RANGE (created_at);
+
+CREATE TABLE logs_2026_01 PARTITION OF logs
+  FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
+
+CREATE TABLE logs_2026_02 PARTITION OF logs
+  FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
+```
+
+**Vacuum and Analyze Automation:**
+```sql
+-- Enable autovacuum (default in PostgreSQL)
+-- /etc/postgresql/18/main/postgresql.conf
+autovacuum = on
+autovacuum_max_workers = 3
+autovacuum_naptime = 1min
+
+-- Manual vacuum for heavily updated tables
+VACUUM ANALYZE users;
+VACUUM ANALYZE sessions;
+
+-- Scheduled full vacuum (weekly, low-traffic period)
+VACUUM FULL ANALYZE;
+```
+
+**Index Maintenance:**
+```sql
+-- Find missing indexes
+SELECT
+  schemaname,
+  tablename,
+  attname,
+  n_distinct,
+  correlation
+FROM pg_stats
+WHERE schemaname = 'public'
+  AND n_distinct > 100
+  AND correlation < 0.1;
+
+-- Find unused indexes (candidates for removal)
+SELECT
+  schemaname,
+  tablename,
+  indexname,
+  idx_scan,
+  pg_size_pretty(pg_relation_size(indexrelid)) AS index_size
+FROM pg_stat_user_indexes
+WHERE idx_scan = 0
+  AND indexrelname NOT LIKE 'pg_%'
+ORDER BY pg_relation_size(indexrelid) DESC;
+
+-- Rebuild bloated indexes
+REINDEX INDEX CONCURRENTLY index_name;
+```
+
+### Caching Mechanisms
+
+**Multi-Level Caching Strategy:**
+```yaml
+Level 1: Application Cache (In-Memory)
+  - Storage: Node.js Map, LRU cache
+  - TTL: 1-5 minutes
+  - Size: 100-1000 entries
+  - Use: Frequently accessed data, configuration
+
+Level 2: Redis Cache (Shared)
+  - Storage: Redis
+  - TTL: 5-60 minutes
+  - Size: Gigabytes
+  - Use: Session data, user data, API responses
+
+Level 3: CDN Cache (Edge)
+  - Storage: Cloudflare, AWS CloudFront
+  - TTL: 1-24 hours
+  - Size: Unlimited
+  - Use: Static assets, public API responses
+```
+
+**Application-Level Caching (LRU):**
+```typescript
+import LRU from 'lru-cache';
+
+const cache = new LRU({
+  max: 500, // Maximum items
+  maxSize: 50 * 1024 * 1024, // 50MB
+  ttl: 1000 * 60 * 5, // 5 minutes
+  sizeCalculation: (value) => JSON.stringify(value).length
+});
+
+// Cache middleware
+function cacheMiddleware(ttl = 300) {
+  return (req, res, next) => {
+    const key = `${req.method}:${req.originalUrl}`;
+    const cached = cache.get(key);
+
+    if (cached) {
+      return res.json(cached);
+    }
+
+    const originalJson = res.json.bind(res);
+    res.json = (body) => {
+      cache.set(key, body, { ttl: ttl * 1000 });
+      return originalJson(body);
+    };
+
+    next();
+  };
+}
+
+// Usage
+app.get('/api/users', cacheMiddleware(60), async (req, res) => {
+  const users = await prisma.user.findMany();
+  res.json(users);
+});
+```
+
+**Redis Caching:**
+```typescript
+// Cache-aside pattern (lazy loading)
+async function getUser(userId: string) {
+  const cacheKey = `user:${userId}`;
+
+  // 1. Try to get from cache
+  const cached = await redis.get(cacheKey);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  // 2. Cache miss - fetch from database
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+
+  // 3. Store in cache
+  if (user) {
+    await redis.setex(cacheKey, 300, JSON.stringify(user)); // 5 minutes TTL
+  }
+
+  return user;
+}
+
+// Write-through pattern (update cache on write)
+async function updateUser(userId: string, data: any) {
+  const cacheKey = `user:${userId}`;
+
+  // 1. Update database
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data
+  });
+
+  // 2. Update cache
+  await redis.setex(cacheKey, 300, JSON.stringify(user));
+
+  return user;
+}
+```
+
+**Cache Invalidation Patterns:**
+```typescript
+// 1. Time-based expiration (TTL)
+await redis.setex('key', 300, 'value'); // Expires in 5 minutes
+
+// 2. Event-based invalidation
+async function deleteUser(userId: string) {
+  // Delete from database
+  await prisma.user.delete({ where: { id: userId } });
+
+  // Invalidate cache
+  await redis.del(`user:${userId}`);
+
+  // Invalidate related caches
+  await redis.del(`user:${userId}:posts`);
+  await redis.del(`users:list`); // Invalidate list cache
+}
+
+// 3. Tag-based invalidation (cache groups)
+async function invalidateTag(tag: string) {
+  const keys = await redis.keys(`*:tag:${tag}`);
+  if (keys.length > 0) {
+    await redis.del(...keys);
+  }
+}
+
+// Usage: Cache with tags
+await redis.setex(`user:${userId}:tag:users`, 300, JSON.stringify(user));
+await invalidateTag('users'); // Invalidates all user caches
+```
+
+**Redis Configuration for Scale:**
+```yaml
+# redis.conf
+maxmemory 2gb
+maxmemory-policy allkeys-lru  # Evict least recently used keys
+
+# Persistence (optional for cache)
+save ""  # Disable RDB snapshots for pure cache
+appendonly yes  # Enable AOF for durability
+
+# Replication (high availability)
+replicaof master-redis 6379
+replica-read-only yes
+
+# Cluster mode (sharding)
+cluster-enabled yes
+cluster-config-file nodes.conf
+cluster-node-timeout 5000
+```
+
+**CDN Caching (Cloudflare Example):**
+```typescript
+// Set cache headers for CDN
+app.get('/api/public/posts', (req, res) => {
+  // Cache for 1 hour on CDN, revalidate
+  res.set('Cache-Control', 'public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400');
+
+  const posts = await prisma.post.findMany({ where: { published: true } });
+  res.json(posts);
+});
+
+// Bypass cache for authenticated requests
+app.get('/api/private/posts', (req, res) => {
+  res.set('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+
+  const posts = await prisma.post.findMany({ where: { userId: req.user.id } });
+  res.json(posts);
+});
+```
+
+### Performance Monitoring
+
+**Application Performance Monitoring (APM):**
+```typescript
+// Prometheus metrics
+import promClient from 'prom-client';
+
+const register = new promClient.Registry();
+
+// Default system metrics
+promClient.collectDefaultMetrics({ register });
+
+// Custom metrics
+const httpRequestDuration = new promClient.Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'Duration of HTTP requests in seconds',
+  labelNames: ['method', 'route', 'status_code'],
+  buckets: [0.1, 0.5, 1, 2, 5]
+});
+
+const httpRequestTotal = new promClient.Counter({
+  name: 'http_requests_total',
+  help: 'Total number of HTTP requests',
+  labelNames: ['method', 'route', 'status_code']
+});
+
+register.registerMetric(httpRequestDuration);
+register.registerMetric(httpRequestTotal);
+
+// Metrics middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+
+  res.on('finish', () => {
+    const duration = (Date.now() - start) / 1000;
+    const route = req.route?.path || req.path;
+
+    httpRequestDuration.labels(req.method, route, res.statusCode.toString()).observe(duration);
+    httpRequestTotal.labels(req.method, route, res.statusCode.toString()).inc();
+  });
+
+  next();
+});
+
+// Metrics endpoint
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', register.contentType);
+  res.send(await register.metrics());
+});
+```
+
+**Key Performance Indicators (KPIs):**
+```yaml
+Response Time:
+  P50 (Median): <200ms (target)
+  P95: <500ms (target)
+  P99: <1000ms (target)
+  P99.9: <2000ms (acceptable)
+
+Throughput:
+  Target: 1000+ requests/second per instance
+  Baseline: Measure under normal load
+  Peak: Measure under 2x normal load
+
+Error Rate:
+  Target: <0.1% (1 error per 1000 requests)
+  Critical Threshold: >1% (alert immediately)
+
+Availability:
+  Target: 99.9% uptime (8.76 hours downtime/year)
+  SLA: 99.5% minimum
+```
+
+**Database Performance Metrics:**
+```sql
+-- Query execution time
+SELECT
+  query,
+  calls,
+  total_time / 1000 AS total_seconds,
+  mean_time / 1000 AS mean_seconds,
+  max_time / 1000 AS max_seconds
+FROM pg_stat_statements
+ORDER BY mean_time DESC
+LIMIT 10;
+
+-- Connection pool utilization
+SELECT
+  state,
+  COUNT(*) as connections
+FROM pg_stat_activity
+GROUP BY state;
+
+-- Index hit rate (should be >99%)
+SELECT
+  sum(idx_blks_hit) / nullif(sum(idx_blks_hit + idx_blks_read), 0) * 100 AS index_hit_rate
+FROM pg_statio_user_indexes;
+
+-- Cache hit rate (should be >99%)
+SELECT
+  sum(heap_blks_hit) / nullif(sum(heap_blks_hit + heap_blks_read), 0) * 100 AS cache_hit_rate
+FROM pg_statio_user_tables;
+```
+
+**Resource Utilization:**
+```yaml
+CPU Usage:
+  Normal: 30-50%
+  Peak: 60-70%
+  Critical: >80% (scale up)
+
+Memory Usage:
+  Normal: 50-70%
+  Peak: 70-80%
+  Critical: >90% (scale up, investigate leaks)
+
+Disk I/O:
+  Monitor: IOPS, read/write throughput
+  SSD: 10,000+ IOPS
+  HDD: 100-200 IOPS
+
+Network Bandwidth:
+  Monitor: Ingress/egress traffic
+  Alert: >80% of capacity
+```
+
+### Performance Benchmarking
+
+**Load Testing with k6:**
+```javascript
+// load-test.js
+import http from 'k6/http';
+import { check, sleep } from 'k6';
+
+export const options = {
+  stages: [
+    { duration: '2m', target: 100 },  // Ramp up to 100 users
+    { duration: '5m', target: 100 },  // Stay at 100 users
+    { duration: '2m', target: 200 },  // Ramp up to 200 users
+    { duration: '5m', target: 200 },  // Stay at 200 users
+    { duration: '2m', target: 0 },    // Ramp down to 0 users
+  ],
+  thresholds: {
+    http_req_duration: ['p(95)<500', 'p(99)<1000'], // 95% < 500ms, 99% < 1s
+    http_req_failed: ['rate<0.01'], // Error rate < 1%
+  },
+};
+
+export default function () {
+  // Test login
+  const loginRes = http.post('https://app.company.com/api/auth/login', {
+    email: 'test@example.com',
+    password: 'password123'
+  });
+
+  check(loginRes, {
+    'login successful': (r) => r.status === 200,
+    'token received': (r) => r.json('token') !== undefined
+  });
+
+  const token = loginRes.json('token');
+
+  // Test API endpoint
+  const params = {
+    headers: { 'Authorization': `Bearer ${token}` }
+  };
+
+  const res = http.get('https://app.company.com/api/users', params);
+
+  check(res, {
+    'status is 200': (r) => r.status === 200,
+    'response time < 500ms': (r) => r.timings.duration < 500
+  });
+
+  sleep(1);
+}
+
+// Run: k6 run load-test.js
+```
+
+**Database Benchmarking (pgbench):**
+```bash
+# Initialize test database
+pgbench -i -s 50 testdb  # 50x scale factor (50 million rows)
+
+# Run benchmark
+pgbench -c 10 -j 2 -t 1000 testdb
+# -c 10: 10 concurrent clients
+# -j 2: 2 worker threads
+# -t 1000: 1000 transactions per client
+
+# Custom SQL benchmark
+pgbench -c 10 -t 100 -f custom-queries.sql testdb
+```
+
+**Cache Performance Testing:**
+```typescript
+// Benchmark cache hit rate
+async function benchmarkCache(iterations = 10000) {
+  let hits = 0;
+  let misses = 0;
+
+  const keys = Array.from({ length: 100 }, (_, i) => `key-${i}`);
+
+  for (let i = 0; i < iterations; i++) {
+    const key = keys[Math.floor(Math.random() * keys.length)];
+    const cached = await redis.get(key);
+
+    if (cached) {
+      hits++;
+    } else {
+      misses++;
+      await redis.setex(key, 60, 'value');
+    }
+  }
+
+  const hitRate = (hits / (hits + misses)) * 100;
+  console.log(`Cache hit rate: ${hitRate.toFixed(2)}%`);
+  console.log(`Hits: ${hits}, Misses: ${misses}`);
+}
 ```
 
 ---
@@ -1217,6 +4661,697 @@ pipeline {
 
 ---
 
+## 🔄 UPGRADE & MIGRATION TOOLS
+
+### Version Upgrade Procedures
+
+**Semantic Versioning Strategy:**
+```yaml
+Version Format: MAJOR.MINOR.PATCH (e.g., 2.5.3)
+
+MAJOR (Breaking Changes):
+  - Database schema changes that aren't backward compatible
+  - API endpoint removals or signature changes
+  - Configuration file format changes
+  - Minimum dependency version bumps
+  - Example: 1.9.5 → 2.0.0
+
+MINOR (New Features):
+  - New API endpoints
+  - New features (backward compatible)
+  - Database schema additions (backward compatible)
+  - New optional configuration parameters
+  - Example: 2.0.1 → 2.1.0
+
+PATCH (Bug Fixes):
+  - Bug fixes
+  - Security patches
+  - Performance improvements
+  - Documentation updates
+  - Example: 2.1.0 → 2.1.1
+```
+
+**Pre-Upgrade Checklist:**
+```yaml
+1. Review Release Notes:
+   - Read CHANGELOG.md for breaking changes
+   - Check migration guide for version-specific steps
+   - Identify features being deprecated
+   - Review new features and configuration options
+
+2. Backup Everything:
+   - Database backup (pg_dump)
+   - Configuration files (.env, nginx.conf)
+   - Uploaded files (if stored locally)
+   - SSL certificates
+   - Custom modifications
+
+3. Test in Staging:
+   - Deploy to staging environment first
+   - Run full test suite
+   - Test critical user workflows
+   - Verify integrations (LDAP, SAML, payment gateway)
+   - Load test with production-like data
+
+4. Schedule Maintenance Window:
+   - Notify users in advance (email, in-app banner)
+   - Choose low-traffic time (typically 2-4 AM)
+   - Allocate 2x expected upgrade time
+   - Prepare rollback plan
+
+5. Verify Prerequisites:
+   - Check Node.js version compatibility
+   - Check PostgreSQL version compatibility
+   - Review new environment variables required
+   - Ensure sufficient disk space (2x current usage)
+```
+
+**Upgrade Process (Zero-Downtime):**
+
+*Method 1: Blue-Green Deployment*
+```bash
+#!/bin/bash
+# Blue-Green upgrade script
+
+# Current (blue) environment
+BLUE_ENV="production"
+GREEN_ENV="production-next"
+
+# 1. Deploy new version to green environment
+echo "Deploying version $NEW_VERSION to green environment..."
+docker-compose -f docker-compose.green.yml up -d
+
+# 2. Wait for green to be healthy
+echo "Waiting for green environment to be healthy..."
+for i in {1..30}; do
+  if curl -f http://green.internal:3000/health; then
+    echo "Green environment is healthy"
+    break
+  fi
+  sleep 10
+done
+
+# 3. Run database migrations (backward compatible)
+echo "Running database migrations..."
+docker exec green-app npx prisma migrate deploy
+
+# 4. Smoke test new version
+echo "Running smoke tests..."
+./scripts/smoke-test.sh http://green.internal:3000
+
+if [ $? -ne 0 ]; then
+  echo "Smoke tests failed, aborting upgrade"
+  docker-compose -f docker-compose.green.yml down
+  exit 1
+fi
+
+# 5. Switch traffic to green (via load balancer)
+echo "Switching traffic to green environment..."
+# Update nginx upstream or load balancer configuration
+sed -i 's/blue.internal/green.internal/' /etc/nginx/conf.d/upstream.conf
+nginx -s reload
+
+# 6. Monitor for issues (5 minutes)
+echo "Monitoring for issues..."
+sleep 300
+
+# Check error rate
+ERROR_RATE=$(curl -s http://green.internal:3000/metrics | grep http_errors | awk '{print $2}')
+if (( $(echo "$ERROR_RATE > 0.01" | bc -l) )); then
+  echo "Error rate too high, rolling back..."
+  sed -i 's/green.internal/blue.internal/' /etc/nginx/conf.d/upstream.conf
+  nginx -s reload
+  exit 1
+fi
+
+# 7. Shutdown blue environment
+echo "Upgrade successful, shutting down blue environment..."
+docker-compose -f docker-compose.blue.yml down
+
+echo "Upgrade complete!"
+```
+
+*Method 2: Rolling Upgrade (Kubernetes)*
+```yaml
+# deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # Max 1 extra pod during update
+      maxUnavailable: 0  # Keep all pods available
+  template:
+    spec:
+      containers:
+      - name: app
+        image: myapp:2.0.0
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+```
+
+```bash
+# Apply rolling update
+kubectl set image deployment/app app=myapp:2.0.0
+
+# Monitor rollout
+kubectl rollout status deployment/app
+
+# Rollback if needed
+kubectl rollout undo deployment/app
+```
+
+**Rollback Procedures:**
+```yaml
+Automated Rollback Triggers:
+  - Error rate > 1% for 5 minutes
+  - P95 response time > 2x baseline
+  - Health check failures > 20%
+  - Database connection errors
+
+Manual Rollback Steps:
+  1. Switch load balancer to previous version
+  2. Verify old version is healthy
+  3. Rollback database migrations (if possible)
+  4. Clear Redis cache
+  5. Monitor for stability
+  6. Investigate root cause
+
+Database Migration Rollback:
+  - Each migration has corresponding down migration
+  - Test rollback in staging first
+  - Some migrations can't be rolled back (data loss)
+  - Always backup before running migrations
+```
+
+**Database Migration Rollback Example:**
+```typescript
+// migrations/001_add_user_status.ts
+export async function up(prisma: PrismaClient) {
+  await prisma.$executeRaw`
+    ALTER TABLE users ADD COLUMN status VARCHAR(20) DEFAULT 'active';
+  `;
+}
+
+export async function down(prisma: PrismaClient) {
+  await prisma.$executeRaw`
+    ALTER TABLE users DROP COLUMN status;
+  `;
+}
+
+// Rollback command
+// npx prisma migrate resolve --rolled-back migration_name
+```
+
+### Database Migration Strategies
+
+**Backward-Compatible Migrations:**
+```yaml
+Safe Migration Patterns:
+  1. Add new columns (with defaults):
+     ✅ ALTER TABLE users ADD COLUMN status VARCHAR(20) DEFAULT 'active';
+     ✅ Old code continues working (ignores new column)
+
+  2. Add new tables:
+     ✅ CREATE TABLE notifications (...);
+     ✅ Old code not affected
+
+  3. Add indexes:
+     ✅ CREATE INDEX idx_users_email ON users(email);
+     ✅ Improves performance, no breaking changes
+
+  4. Expand column size:
+     ✅ ALTER TABLE users ALTER COLUMN name TYPE VARCHAR(200);
+     ✅ Old code continues working
+
+Unsafe Migration Patterns (Require Multi-Phase):
+  ❌ Rename columns (breaks old code)
+  ❌ Remove columns (breaks old code)
+  ❌ Change column type (incompatible data)
+  ❌ Add NOT NULL columns (without defaults)
+  ❌ Add foreign key constraints (may fail on existing data)
+```
+
+**Multi-Phase Migration for Breaking Changes:**
+```yaml
+Phase 1: Add new column alongside old (backward compatible):
+  - Deploy code that writes to both old and new columns
+  - Old code still reads from old column
+  - Run for 1-2 weeks to ensure stability
+
+Phase 2: Migrate data (background job):
+  - Copy data from old column to new column
+  - Validate data integrity
+  - Keep both columns in sync
+
+Phase 3: Switch reads to new column:
+  - Deploy code that reads from new column
+  - Old column still updated for safety
+  - Monitor for issues
+
+Phase 4: Remove old column:
+  - Deploy code that only uses new column
+  - Drop old column from database
+```
+
+**Example: Renaming Column (3-Phase Migration):**
+```typescript
+// Phase 1: Add new column
+// migration: 001_add_full_name.ts
+await prisma.$executeRaw`
+  ALTER TABLE users ADD COLUMN full_name VARCHAR(255);
+  UPDATE users SET full_name = name WHERE full_name IS NULL;
+`;
+
+// Code update: Write to both columns
+await prisma.user.update({
+  where: { id },
+  data: {
+    name: fullName,      // Old column
+    fullName: fullName   // New column
+  }
+});
+
+// Phase 2: Backfill data (background job)
+// Ensure all rows have full_name populated
+await prisma.$executeRaw`
+  UPDATE users SET full_name = name WHERE full_name IS NULL;
+`;
+
+// Phase 3: Switch reads to new column
+// Code update: Read from full_name
+const user = await prisma.user.findUnique({
+  where: { id },
+  select: { id: true, fullName: true }  // Use new column
+});
+
+// Phase 4: Remove old column
+// migration: 002_remove_name.ts
+await prisma.$executeRaw`
+  ALTER TABLE users DROP COLUMN name;
+`;
+```
+
+**Data Migration Scripts:**
+```typescript
+// Large dataset migrations (chunked processing)
+async function migrateUserData() {
+  const batchSize = 1000;
+  let offset = 0;
+  let processedCount = 0;
+
+  while (true) {
+    const users = await prisma.user.findMany({
+      take: batchSize,
+      skip: offset,
+      where: { migratedAt: null }
+    });
+
+    if (users.length === 0) break;
+
+    // Process batch
+    for (const user of users) {
+      await migrateUserRecord(user);
+    }
+
+    processedCount += users.length;
+    console.log(`Migrated ${processedCount} users...`);
+
+    // Progress tracking
+    await redis.set('migration:users:progress', processedCount);
+
+    offset += batchSize;
+
+    // Small delay to avoid overwhelming database
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+
+  console.log(`Migration complete: ${processedCount} users migrated`);
+}
+
+// Validation & verification
+async function validateMigration() {
+  const oldCount = await prisma.$queryRaw`SELECT COUNT(*) FROM users`;
+  const newCount = await prisma.$queryRaw`SELECT COUNT(*) FROM user_profiles`;
+
+  if (oldCount !== newCount) {
+    throw new Error(`Count mismatch: ${oldCount} vs ${newCount}`);
+  }
+
+  // Data integrity checks
+  const inconsistencies = await prisma.$queryRaw`
+    SELECT u.id FROM users u
+    LEFT JOIN user_profiles up ON u.id = up.user_id
+    WHERE up.id IS NULL
+  `;
+
+  if (inconsistencies.length > 0) {
+    throw new Error(`Found ${inconsistencies.length} inconsistencies`);
+  }
+
+  console.log('Migration validation passed!');
+}
+```
+
+**Migration Testing:**
+```yaml
+Test Against Production-Like Data:
+  1. Take production database dump (anonymized)
+  2. Restore to staging database
+  3. Run migrations on staging
+  4. Verify data integrity
+  5. Test application against migrated data
+  6. Measure migration duration
+
+Performance Impact Assessment:
+  - Measure migration execution time
+  - Check for table locks (avoid on large tables)
+  - Monitor database CPU/memory during migration
+  - Use CONCURRENTLY for indexes (PostgreSQL)
+
+Rollback Testing:
+  - Test down migrations on staging
+  - Verify data is restored correctly
+  - Document any data loss scenarios
+```
+
+### Zero-Downtime Deployment
+
+**Feature Flags for Gradual Rollout:**
+```typescript
+// Feature flag service
+class FeatureFlags {
+  async isEnabled(flag: string, userId?: string): Promise<boolean> {
+    // Check Redis cache first
+    const cached = await redis.get(`feature:${flag}:${userId || 'global'}`);
+    if (cached !== null) return cached === 'true';
+
+    // Load from database
+    const feature = await prisma.featureFlag.findUnique({
+      where: { name: flag }
+    });
+
+    if (!feature) return false;
+
+    // Global rollout percentage
+    if (feature.rolloutPercentage < 100) {
+      const hash = userId ? hashCode(userId) : 0;
+      const enabled = (hash % 100) < feature.rolloutPercentage;
+      await redis.setex(`feature:${flag}:${userId || 'global'}`, 300, enabled.toString());
+      return enabled;
+    }
+
+    return feature.enabled;
+  }
+}
+
+// Usage in code
+if (await featureFlags.isEnabled('new-dashboard', req.user.id)) {
+  // Use new dashboard
+  return renderNewDashboard();
+} else {
+  // Use old dashboard
+  return renderOldDashboard();
+}
+
+// Gradual rollout: 5% → 25% → 50% → 100%
+await prisma.featureFlag.update({
+  where: { name: 'new-dashboard' },
+  data: { rolloutPercentage: 25 }
+});
+```
+
+**Canary Deployment:**
+```yaml
+Canary Strategy:
+  1. Deploy new version to 5% of servers
+  2. Monitor metrics for 15 minutes:
+     - Error rate
+     - Response time (P95, P99)
+     - Resource usage
+     - User feedback
+  3. If metrics are good, increase to 25%
+  4. Continue gradual rollout: 50% → 75% → 100%
+  5. Automated rollback if error rate increases
+
+Monitoring During Canary:
+  - Compare new vs old version metrics
+  - Alert if new version has >2x error rate
+  - Alert if P95 latency increases >20%
+  - Monitor custom business metrics
+```
+
+**Health Check Requirements:**
+```typescript
+// Comprehensive health check for zero-downtime
+app.get('/health', async (req, res) => {
+  const health = {
+    status: 'ok',
+    version: process.env.APP_VERSION,
+    timestamp: new Date().toISOString(),
+    checks: {
+      database: 'checking',
+      redis: 'checking',
+      migrations: 'checking',
+      disk: 'checking'
+    }
+  };
+
+  try {
+    // Database check
+    await prisma.$queryRaw`SELECT 1`;
+    health.checks.database = 'ok';
+  } catch (error) {
+    health.checks.database = 'error';
+    health.status = 'degraded';
+  }
+
+  try {
+    // Redis check
+    await redis.ping();
+    health.checks.redis = 'ok';
+  } catch (error) {
+    health.checks.redis = 'error';
+    health.status = 'degraded';
+  }
+
+  try {
+    // Verify migrations are up to date
+    const pendingMigrations = await prisma.$queryRaw`
+      SELECT * FROM _prisma_migrations WHERE finished_at IS NULL
+    `;
+    health.checks.migrations = pendingMigrations.length === 0 ? 'ok' : 'pending';
+  } catch (error) {
+    health.checks.migrations = 'error';
+  }
+
+  // Disk space check
+  const diskUsage = await checkDiskUsage();
+  health.checks.disk = diskUsage < 90 ? 'ok' : 'warning';
+
+  const statusCode = health.status === 'ok' ? 200 : 503;
+  res.status(statusCode).json(health);
+});
+
+// Readiness check (for load balancer)
+app.get('/ready', async (req, res) => {
+  // Only return 200 if app is ready to serve traffic
+  const ready =
+    await checkDatabaseConnection() &&
+    await checkRedisConnection() &&
+    await checkMigrationsComplete();
+
+  res.status(ready ? 200 : 503).json({ ready });
+});
+```
+
+**Database Connection Draining:**
+```typescript
+// Graceful shutdown with connection draining
+let isShuttingDown = false;
+
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received, starting graceful shutdown...');
+  isShuttingDown = true;
+
+  // Stop accepting new requests
+  server.close(() => {
+    console.log('HTTP server closed');
+  });
+
+  // Wait for in-flight requests to complete (max 30 seconds)
+  await new Promise(resolve => setTimeout(resolve, 30000));
+
+  // Close database connections
+  await prisma.$disconnect();
+  console.log('Database connections closed');
+
+  // Close Redis connections
+  await redis.quit();
+  console.log('Redis connections closed');
+
+  process.exit(0);
+});
+
+// Middleware to reject requests during shutdown
+app.use((req, res, next) => {
+  if (isShuttingDown) {
+    res.status(503).json({ error: 'Server is shutting down' });
+  } else {
+    next();
+  }
+});
+```
+
+### Configuration Backup & Restore
+
+**Automated Configuration Backup:**
+```bash
+#!/bin/bash
+# backup-config.sh
+
+BACKUP_DIR="/var/backups/app-config"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_FILE="$BACKUP_DIR/config_$TIMESTAMP.tar.gz"
+
+mkdir -p $BACKUP_DIR
+
+# Backup configuration files
+tar -czf $BACKUP_FILE \
+  .env \
+  .env.production \
+  /etc/nginx/sites-available/app.conf \
+  /etc/ssl/certs/app.* \
+  prisma/schema.prisma \
+  docker-compose.yml \
+  docker-compose.prod.yml
+
+# Encrypt backup (optional)
+gpg --encrypt --recipient admin@company.com $BACKUP_FILE
+
+# Upload to S3
+aws s3 cp $BACKUP_FILE.gpg s3://company-backups/config/
+
+# Retain only last 30 days
+find $BACKUP_DIR -name "config_*.tar.gz" -mtime +30 -delete
+
+echo "Configuration backup completed: $BACKUP_FILE"
+```
+
+**Configuration Restore:**
+```bash
+#!/bin/bash
+# restore-config.sh
+
+BACKUP_FILE=$1
+
+if [ -z "$BACKUP_FILE" ]; then
+  echo "Usage: ./restore-config.sh <backup-file>"
+  exit 1
+fi
+
+# Decrypt backup
+gpg --decrypt $BACKUP_FILE > /tmp/config.tar.gz
+
+# Extract to temporary directory
+mkdir -p /tmp/config-restore
+tar -xzf /tmp/config.tar.gz -C /tmp/config-restore
+
+# Validate configuration files
+echo "Validating configuration files..."
+node -c /tmp/config-restore/.env || { echo ".env validation failed"; exit 1; }
+nginx -t -c /tmp/config-restore/nginx.conf || { echo "nginx config validation failed"; exit 1; }
+
+# Backup current configuration
+./backup-config.sh
+
+# Restore configuration
+echo "Restoring configuration..."
+cp /tmp/config-restore/.env .env
+cp /tmp/config-restore/nginx.conf /etc/nginx/sites-available/app.conf
+# ... copy other files
+
+# Restart services
+systemctl reload nginx
+systemctl restart app
+
+echo "Configuration restored successfully"
+```
+
+**Secrets Rotation:**
+```yaml
+JWT Secret Rotation (with grace period):
+  1. Generate new JWT secret
+  2. Add to environment as JWT_SECRET_NEW
+  3. Update code to validate both old and new secrets
+  4. Deploy application (accepts both secrets)
+  5. Wait 24 hours (or max token TTL)
+  6. Remove old secret, rename new secret to JWT_SECRET
+  7. Deploy application
+
+Database Password Rotation:
+  1. Create new database user with same permissions
+  2. Update DATABASE_URL to use new credentials
+  3. Deploy application (rolling restart)
+  4. Verify all instances use new credentials
+  5. Remove old database user
+  6. Update backup scripts with new credentials
+
+API Key Rotation:
+  - Rotate every 90 days
+  - Notify integrations 2 weeks before expiry
+  - Provide 2-week overlap period (both keys work)
+  - Revoke old key after grace period
+
+Automated Rotation Schedule:
+  - JWT secrets: Every 6 months
+  - Database passwords: Every 90 days
+  - API keys: Every 90 days
+  - SSL certificates: Auto-renew 30 days before expiry (Let's Encrypt)
+  - Service account credentials: Every year
+```
+
+**Configuration Validation:**
+```typescript
+// Validate configuration before starting app
+import { z } from 'zod';
+
+const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'production', 'test']),
+  PORT: z.string().regex(/^\d+$/).transform(Number),
+  DATABASE_URL: z.string().url(),
+  REDIS_URL: z.string().url(),
+  JWT_SECRET: z.string().min(32),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.string().regex(/^\d+$/).optional(),
+  // ... other required env vars
+});
+
+try {
+  const config = envSchema.parse(process.env);
+  console.log('Configuration validated successfully');
+} catch (error) {
+  console.error('Configuration validation failed:', error);
+  process.exit(1);
+}
+```
+
+---
+
 ## 📝 REQUIRED DOCUMENTATION FILES
 
 Generate comprehensive, professional Markdown files for GitHub repository:
@@ -1572,6 +5707,823 @@ Error Handling:
 
 ---
 
+## 🚀 APPLICATION FEATURES & CAPABILITIES
+
+### A. Notification System Architecture
+
+**Multi-Channel Notifications:**
+```yaml
+Supported Channels:
+  1. Email: Transactional and marketing emails (SMTP, SendGrid, AWS SES)
+  2. In-App: Real-time notifications via WebSocket
+  3. SMS: Text messages via Twilio, AWS SNS
+  4. Push Notifications: Mobile (FCM for Android, APNs for iOS)
+  5. Webhooks: External system integration
+
+Use Cases:
+  - User actions: Registration, password reset, profile updates
+  - System events: Backup completed, error occurred
+  - Business events: New order, payment received, subscription expiring
+  - Scheduled: Daily digest, weekly reports
+```
+
+**Notification Preferences:**
+```prisma
+// schema.prisma
+model NotificationPreference {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  channel   String   // email, sms, push, in_app
+  category  String   // security, updates, marketing, reminders
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channel, category])
+  @@index([userId])
+  @@map("notification_preferences")
+}
+
+model Notification {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  type        String    // notification type
+  channel     String    // email, sms, push, in_app
+  title       String
+  message     String    @db.Text
+  data        Json?     // Additional data
+  read        Boolean   @default(false)
+  readAt      DateTime? @map("read_at")
+  deliveredAt DateTime? @map("delivered_at")
+  failedAt    DateTime? @map("failed_at")
+  error       String?   @db.Text
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, read])
+  @@map("notifications")
+}
+```
+
+**Notification Queue (Bull):**
+```typescript
+import Bull from 'bull';
+import nodemailer from 'nodemailer';
+import twilio from 'twilio';
+
+// Create notification queue
+const notificationQueue = new Bull('notifications', process.env.REDIS_URL!);
+
+// Email processor
+notificationQueue.process('email', async (job) => {
+  const { to, subject, html, attachments } = job.data;
+
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: parseInt(process.env.SMTP_PORT!),
+    secure: true,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASSWORD
+    }
+  });
+
+  await transporter.sendMail({
+    from: process.env.FROM_EMAIL,
+    to,
+    subject,
+    html,
+    attachments
+  });
+
+  return { delivered: true, to, subject };
+});
+
+// SMS processor
+notificationQueue.process('sms', async (job) => {
+  const { to, message } = job.data;
+
+  const twilioClient = twilio(
+    process.env.TWILIO_ACCOUNT_SID,
+    process.env.TWILIO_AUTH_TOKEN
+  );
+
+  await twilioClient.messages.create({
+    body: message,
+    from: process.env.TWILIO_PHONE_NUMBER,
+    to
+  });
+
+  return { delivered: true, to };
+});
+
+// In-app notification processor
+notificationQueue.process('in-app', async (job) => {
+  const { userId, title, message, data } = job.data;
+
+  // Save to database
+  const notification = await prisma.notification.create({
+    data: {
+      userId,
+      type: data.type,
+      channel: 'in_app',
+      title,
+      message,
+      data,
+      deliveredAt: new Date()
+    }
+  });
+
+  // Send via WebSocket (if user is online)
+  const io = getSocketIOInstance();
+  io.to(`user:${userId}`).emit('notification', notification);
+
+  return { delivered: true, userId };
+});
+
+// Add notifications to queue
+export async function sendNotification(channel: string, data: any) {
+  await notificationQueue.add(channel, data, {
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 2000
+    },
+    removeOnComplete: true,
+    removeOnFail: false
+  });
+}
+```
+
+**Notification Templates:**
+```typescript
+// Template engine (Handlebars)
+import Handlebars from 'handlebars';
+import fs from 'fs';
+
+const templates = {
+  'welcome-email': fs.readFileSync('./templates/welcome-email.hbs', 'utf-8'),
+  'password-reset': fs.readFileSync('./templates/password-reset.hbs', 'utf-8'),
+  'invoice-paid': fs.readFileSync('./templates/invoice-paid.hbs', 'utf-8')
+};
+
+function renderTemplate(templateName: string, data: any): string {
+  const template = Handlebars.compile(templates[templateName]);
+  return template(data);
+}
+
+// Usage
+async function sendWelcomeEmail(user: User) {
+  const html = renderTemplate('welcome-email', {
+    name: user.name,
+    email: user.email,
+    loginUrl: `${process.env.APP_URL}/login`
+  });
+
+  await sendNotification('email', {
+    to: user.email,
+    subject: 'Welcome to Our Application!',
+    html
+  });
+}
+```
+
+**Delivery Retry Logic:**
+```typescript
+// Configure job retry
+notificationQueue.on('failed', async (job, err) => {
+  console.error(`Notification ${job.id} failed:`, err.message);
+
+  // Save failure to database
+  if (job.data.notificationId) {
+    await prisma.notification.update({
+      where: { id: job.data.notificationId },
+      data: {
+        failedAt: new Date(),
+        error: err.message
+      }
+    });
+  }
+
+  // Alert admin after 3 failures
+  if (job.attemptsMade >= 3) {
+    await alertAdmin(`Notification delivery failed after 3 attempts: ${job.id}`);
+  }
+});
+
+// Exponential backoff: 2s, 4s, 8s
+const retryStrategy = {
+  attempts: 3,
+  backoff: {
+    type: 'exponential',
+    delay: 2000
+  }
+};
+```
+
+**Webhook Notifications:**
+```typescript
+// Send webhook notifications to external systems
+async function sendWebhook(url: string, event: string, data: any) {
+  const payload = {
+    event,
+    timestamp: new Date().toISOString(),
+    data
+  };
+
+  // Generate HMAC signature for security
+  const signature = crypto
+    .createHmac('sha256', process.env.WEBHOOK_SECRET!)
+    .update(JSON.stringify(payload))
+    .digest('hex');
+
+  await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Webhook-Signature': signature
+    },
+    body: JSON.stringify(payload)
+  });
+}
+
+// Usage: Notify external CRM when user registers
+await sendWebhook(
+  'https://crm.company.com/webhooks/user-created',
+  'user.created',
+  { userId: user.id, email: user.email }
+);
+```
+
+### B. Internationalization (i18n) System
+
+**Framework Setup:**
+```yaml
+Backend: i18next 24.x
+Frontend: react-i18next 16.x
+
+Supported Locales:
+  - en: English (default)
+  - es: Spanish
+  - fr: French
+  - de: German
+  - ja: Japanese
+  - zh: Chinese (Simplified)
+  - ar: Arabic (RTL support)
+
+Features:
+  - Dynamic locale switching
+  - Namespace organization
+  - Pluralization rules
+  - Date/time formatting
+  - Number/currency formatting
+  - RTL (Right-to-Left) layout support
+```
+
+**Translation File Structure:**
+```
+/locales
+  /en
+    common.json         # Common translations (buttons, labels)
+    auth.json           # Authentication flow
+    errors.json         # Error messages
+    dashboard.json      # Dashboard UI
+    emails.json         # Email templates
+  /es
+    common.json
+    auth.json
+    errors.json
+    dashboard.json
+    emails.json
+  /fr
+    ... (same structure)
+```
+
+**i18next Configuration (Backend):**
+```typescript
+import i18next from 'i18next';
+import Backend from 'i18next-fs-backend';
+import middleware from 'i18next-http-middleware';
+
+i18next
+  .use(Backend)
+  .use(middleware.LanguageDetector)
+  .init({
+    fallbackLng: 'en',
+    supportedLngs: ['en', 'es', 'fr', 'de', 'ja', 'zh', 'ar'],
+    ns: ['common', 'auth', 'errors', 'dashboard'],
+    defaultNS: 'common',
+    backend: {
+      loadPath: './locales/{{lng}}/{{ns}}.json'
+    },
+    detection: {
+      order: ['querystring', 'cookie', 'header'],
+      caches: ['cookie'],
+      lookupQuerystring: 'lang',
+      lookupCookie: 'i18next',
+      lookupHeader: 'accept-language'
+    },
+    interpolation: {
+      escapeValue: false
+    }
+  });
+
+app.use(middleware.handle(i18next));
+
+// Usage in routes
+app.get('/api/welcome', (req, res) => {
+  res.json({
+    message: req.t('common:welcome', { name: req.user.name })
+  });
+});
+```
+
+**react-i18next Configuration (Frontend):**
+```typescript
+import i18n from 'i18next';
+import { initReactI18next } from 'react-i18next';
+import Backend from 'i18next-http-backend';
+import LanguageDetector from 'i18next-browser-languagedetector';
+
+i18n
+  .use(Backend)
+  .use(LanguageDetector)
+  .use(initReactI18next)
+  .init({
+    fallbackLng: 'en',
+    supportedLngs: ['en', 'es', 'fr', 'de', 'ja', 'zh', 'ar'],
+    ns: ['common', 'auth', 'errors', 'dashboard'],
+    defaultNS: 'common',
+    backend: {
+      loadPath: '/locales/{{lng}}/{{ns}}.json'
+    },
+    interpolation: {
+      escapeValue: false
+    }
+  });
+
+// Usage in React components
+import { useTranslation } from 'react-i18next';
+
+function WelcomeComponent() {
+  const { t, i18n } = useTranslation();
+
+  return (
+    <div>
+      <h1>{t('common:welcome')}</h1>
+      <button onClick={() => i18n.changeLanguage('es')}>
+        {t('common:change_language')}
+      </button>
+    </div>
+  );
+}
+```
+
+**Translation Files Example:**
+```json
+// locales/en/common.json
+{
+  "welcome": "Welcome, {{name}}!",
+  "login": "Log In",
+  "logout": "Log Out",
+  "save": "Save",
+  "cancel": "Cancel",
+  "delete": "Delete",
+  "confirm_delete": "Are you sure you want to delete this item?",
+  "items_count": "{{count}} item",
+  "items_count_plural": "{{count}} items"
+}
+
+// locales/es/common.json
+{
+  "welcome": "¡Bienvenido, {{name}}!",
+  "login": "Iniciar Sesión",
+  "logout": "Cerrar Sesión",
+  "save": "Guardar",
+  "cancel": "Cancelar",
+  "delete": "Eliminar",
+  "confirm_delete": "¿Está seguro de que desea eliminar este elemento?",
+  "items_count": "{{count}} elemento",
+  "items_count_plural": "{{count}} elementos"
+}
+```
+
+**RTL (Right-to-Left) Support:**
+```typescript
+// Detect RTL languages
+const rtlLanguages = ['ar', 'he', 'fa', 'ur'];
+
+useEffect(() => {
+  const isRTL = rtlLanguages.includes(i18n.language);
+  document.documentElement.dir = isRTL ? 'rtl' : 'ltr';
+  document.documentElement.lang = i18n.language;
+}, [i18n.language]);
+
+// CSS for RTL
+// styles.css
+html[dir="rtl"] {
+  text-align: right;
+}
+
+html[dir="rtl"] .margin-left {
+  margin-left: 0;
+  margin-right: 1rem;
+}
+```
+
+**Date/Time Formatting:**
+```typescript
+import { format } from 'date-fns';
+import { enUS, es, fr, de, ja, zhCN, ar } from 'date-fns/locale';
+
+const locales = { en: enUS, es, fr, de, ja, zh: zhCN, ar };
+
+function formatDate(date: Date, locale: string) {
+  return format(date, 'PPP', { locale: locales[locale] });
+}
+
+// Or use Intl API
+const dateFormatter = new Intl.DateTimeFormat(i18n.language, {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric'
+});
+
+dateFormatter.format(new Date()); // "February 2, 2026" (en) or "2 de febrero de 2026" (es)
+```
+
+**Number & Currency Formatting:**
+```typescript
+// Number formatting
+const numberFormatter = new Intl.NumberFormat(i18n.language);
+numberFormatter.format(1234567.89); // "1,234,567.89" (en) or "1.234.567,89" (de)
+
+// Currency formatting
+const currencyFormatter = new Intl.NumberFormat(i18n.language, {
+  style: 'currency',
+  currency: 'USD'
+});
+currencyFormatter.format(1234.56); // "$1,234.56" (en) or "1.234,56 $" (es)
+```
+
+**Translation Workflow:**
+```yaml
+1. Development:
+   - Developers add translation keys in code
+   - Extract keys using i18next-parser
+   - Generate translation files
+
+2. Translation:
+   - Upload translation files to Crowdin/Lokalise
+   - Professional translators translate
+   - Community contributions (optional)
+
+3. Integration:
+   - Download translated files
+   - Commit to repository
+   - Deploy with application
+
+Tools:
+  - Crowdin: Professional translation platform
+  - Lokalise: Localization management
+  - i18next-parser: Extract translation keys from code
+```
+
+### C. Scheduled Tasks & Background Jobs
+
+**Job Scheduling Frameworks:**
+```yaml
+Simple Schedules:
+  - node-cron: 6.x
+  - Usage: Simple recurring tasks
+  - Syntax: Cron expressions (0 2 * * * = daily at 2 AM)
+
+Complex Workflows:
+  - Bull: 4.x (Redis-based queues)
+  - Usage: Job queues, retry logic, priorities
+  - Features: Progress tracking, job lifecycle events
+
+Advanced Orchestration:
+  - Temporal: ~1.28.x (already in tech stack)
+  - Usage: Long-running workflows, saga patterns
+  - Features: Durable execution, workflow versioning
+```
+
+**Common Scheduled Tasks:**
+```typescript
+import cron from 'node-cron';
+
+// 1. Daily database backup (2 AM)
+cron.schedule('0 2 * * *', async () => {
+  console.log('Running daily database backup...');
+  await backupDatabase();
+});
+
+// 2. Hourly usage aggregation
+cron.schedule('0 * * * *', async () => {
+  console.log('Aggregating hourly usage statistics...');
+  await aggregateUsageStatistics();
+});
+
+// 3. Weekly report generation (Mondays at 9 AM)
+cron.schedule('0 9 * * 1', async () => {
+  console.log('Generating weekly reports...');
+  await generateWeeklyReports();
+});
+
+// 4. Monthly invoice generation (1st of month at midnight)
+cron.schedule('0 0 1 * *', async () => {
+  console.log('Generating monthly invoices...');
+  await generateMonthlyInvoices();
+});
+
+// 5. Email digest sending (daily at 8 AM)
+cron.schedule('0 8 * * *', async () => {
+  console.log('Sending daily email digests...');
+  await sendDailyDigests();
+});
+
+// 6. Cleanup old logs (daily at 3 AM, retention: 90 days)
+cron.schedule('0 3 * * *', async () => {
+  console.log('Cleaning up old logs...');
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - 90);
+
+  await prisma.log.deleteMany({
+    where: { createdAt: { lt: cutoffDate } }
+  });
+});
+
+// 7. Session cleanup (hourly)
+cron.schedule('0 * * * *', async () => {
+  console.log('Cleaning up expired sessions...');
+  await redis.scan(0, 'MATCH', 'sess:*', async (keys) => {
+    for (const key of keys) {
+      const ttl = await redis.ttl(key);
+      if (ttl === -1) await redis.del(key); // No expiry set, delete
+    }
+  });
+});
+```
+
+**Job Monitoring Dashboard:**
+```typescript
+// Job status tracking
+interface JobStatus {
+  id: string;
+  name: string;
+  status: 'active' | 'completed' | 'failed' | 'delayed';
+  progress: number;
+  startedAt: Date;
+  completedAt?: Date;
+  executionTime?: number;
+  error?: string;
+}
+
+// Get job statistics
+app.get('/api/admin/jobs/stats', async (req, res) => {
+  const queue = getJobQueue('notifications');
+
+  const [
+    activeCount,
+    completedCount,
+    failedCount,
+    delayedCount
+  ] = await Promise.all([
+    queue.getActiveCount(),
+    queue.getCompletedCount(),
+    queue.getFailedCount(),
+    queue.getDelayedCount()
+  ]);
+
+  res.json({
+    active: activeCount,
+    completed: completedCount,
+    failed: failedCount,
+    delayed: delayedCount
+  });
+});
+
+// Get job history
+app.get('/api/admin/jobs/history', async (req, res) => {
+  const queue = getJobQueue('notifications');
+  const jobs = await queue.getJobs(['completed', 'failed'], 0, 100);
+
+  res.json(jobs.map(job => ({
+    id: job.id,
+    name: job.name,
+    status: await job.getState(),
+    progress: job.progress(),
+    timestamp: job.timestamp,
+    finishedOn: job.finishedOn,
+    failedReason: job.failedReason
+  })));
+});
+```
+
+**Error Handling & Retries:**
+```typescript
+import Bull from 'bull';
+
+const jobQueue = new Bull('background-jobs', process.env.REDIS_URL!);
+
+// Configure retry behavior
+jobQueue.process('send-report', async (job) => {
+  try {
+    await sendReport(job.data.userId, job.data.reportType);
+    return { success: true };
+  } catch (error) {
+    // Log error
+    console.error(`Job ${job.id} failed:`, error);
+
+    // Throw to trigger retry
+    throw error;
+  }
+});
+
+// Add job with retry configuration
+await jobQueue.add('send-report',
+  { userId: '123', reportType: 'weekly' },
+  {
+    attempts: 5,
+    backoff: {
+      type: 'exponential',
+      delay: 1000 // 1s, 2s, 4s, 8s, 16s
+    },
+    removeOnComplete: true,
+    removeOnFail: false
+  }
+);
+
+// Dead letter queue for persistent failures
+jobQueue.on('failed', async (job, err) => {
+  if (job.attemptsMade >= job.opts.attempts) {
+    // Move to dead letter queue
+    const dlq = new Bull('dead-letter-queue', process.env.REDIS_URL!);
+    await dlq.add('failed-job', {
+      originalJob: job.data,
+      error: err.message,
+      attempts: job.attemptsMade
+    });
+  }
+});
+```
+
+**Job Priority Levels:**
+```typescript
+enum JobPriority {
+  CRITICAL = 1,  // Process immediately
+  HIGH = 5,      // Process soon
+  NORMAL = 10,   // Default
+  LOW = 15       // Process when idle
+}
+
+// Add jobs with priority
+await jobQueue.add('critical-task', data, { priority: JobPriority.CRITICAL });
+await jobQueue.add('low-priority-task', data, { priority: JobPriority.LOW });
+
+// Process high-priority jobs first
+jobQueue.process('*', async (job) => {
+  console.log(`Processing job ${job.name} with priority ${job.opts.priority}`);
+  // Process job
+});
+```
+
+### D. Customization Framework
+
+**Plugin Architecture:**
+```yaml
+Plugin System:
+  - Discovery: Auto-detect plugins in /plugins directory
+  - Lifecycle: install → enable → disable → uninstall
+  - API Versioning: v1, v2 (breaking changes)
+  - Isolation: Plugins run in separate contexts
+
+Plugin Structure:
+  /plugins
+    /my-plugin
+      package.json       # Plugin metadata
+      index.js           # Entry point
+      routes.js          # Custom API endpoints
+      hooks.js           # Lifecycle hooks
+      config.schema.json # Configuration schema
+```
+
+**Plugin API:**
+```typescript
+// Plugin interface
+interface Plugin {
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+
+  // Lifecycle hooks
+  install?: () => Promise<void>;
+  enable?: () => Promise<void>;
+  disable?: () => Promise<void>;
+  uninstall?: () => Promise<void>;
+
+  // API extensions
+  routes?: Express.Router;
+  middleware?: Express.RequestHandler[];
+
+  // Event hooks
+  hooks?: {
+    beforeUserCreate?: (user: any) => Promise<any>;
+    afterUserCreate?: (user: any) => Promise<void>;
+    beforeProjectSave?: (project: any) => Promise<any>;
+    afterProjectSave?: (project: any) => Promise<void>;
+  };
+}
+
+// Plugin loader
+class PluginManager {
+  private plugins: Map<string, Plugin> = new Map();
+
+  async loadPlugins() {
+    const pluginDirs = await fs.readdir('./plugins');
+
+    for (const dir of pluginDirs) {
+      const pluginPath = `./plugins/${dir}`;
+      const plugin: Plugin = require(`${pluginPath}/index.js`);
+
+      this.plugins.set(plugin.name, plugin);
+      console.log(`Loaded plugin: ${plugin.name} v${plugin.version}`);
+    }
+  }
+
+  async enablePlugin(name: string) {
+    const plugin = this.plugins.get(name);
+    if (!plugin) throw new Error(`Plugin ${name} not found`);
+
+    if (plugin.enable) await plugin.enable();
+
+    // Register routes
+    if (plugin.routes) {
+      app.use(`/api/plugins/${name}`, plugin.routes);
+    }
+
+    // Register middleware
+    if (plugin.middleware) {
+      plugin.middleware.forEach(mw => app.use(mw));
+    }
+
+    console.log(`Enabled plugin: ${name}`);
+  }
+}
+```
+
+**API Extensibility:**
+```typescript
+// Allow plugins to add custom API endpoints
+const pluginRouter = Express.Router();
+
+pluginRouter.get('/custom-report', async (req, res) => {
+  const data = await generateCustomReport(req.query);
+  res.json(data);
+});
+
+// Event hooks for plugins
+class EventEmitter {
+  private hooks: Map<string, Function[]> = new Map();
+
+  on(event: string, handler: Function) {
+    if (!this.hooks.has(event)) {
+      this.hooks.set(event, []);
+    }
+    this.hooks.get(event)!.push(handler);
+  }
+
+  async emit(event: string, ...args: any[]) {
+    const handlers = this.hooks.get(event) || [];
+    for (const handler of handlers) {
+      await handler(...args);
+    }
+  }
+}
+
+const eventBus = new EventEmitter();
+
+// Plugin can subscribe to events
+eventBus.on('user.created', async (user) => {
+  console.log(`Plugin received user.created event for ${user.email}`);
+  // Custom plugin logic
+});
+
+// Application emits events
+async function createUser(data: any) {
+  const user = await prisma.user.create({ data });
+  await eventBus.emit('user.created', user);
+  return user;
+}
+```
+
+---
+
 ## 🧪 TESTING STRATEGY
 
 ### Test Coverage Requirements
@@ -1848,6 +6800,127 @@ RABBITMQ_URL=amqp://guest:guest@localhost:5672
 # HashiCorp Vault
 VAULT_ADDR=http://localhost:8200
 VAULT_TOKEN=your-vault-token
+
+# LDAP/Active Directory Integration
+LDAP_ENABLED=false
+LDAP_URL=ldap://ad.company.com:389
+LDAP_BIND_DN=CN=AppService,OU=Services,DC=company,DC=com
+LDAP_BIND_PASSWORD=your-ldap-bind-password
+LDAP_SEARCH_BASE=DC=company,DC=com
+LDAP_SEARCH_FILTER=(sAMAccountName={{username}})
+LDAP_GROUP_SEARCH_BASE=OU=Groups,DC=company,DC=com
+LDAP_USER_SEARCH_BASE=OU=Users,DC=company,DC=com
+LDAP_SYNC_INTERVAL=3600000
+
+# SAML 2.0 Integration
+SAML_ENABLED=false
+SAML_ISSUER=https://app.company.com
+SAML_ENTRY_POINT=https://idp.company.com/saml2/sso
+SAML_CALLBACK_URL=https://app.company.com/auth/saml/callback
+SAML_LOGOUT_URL=https://idp.company.com/saml2/logout
+SAML_LOGOUT_CALLBACK_URL=https://app.company.com/auth/saml/logout/callback
+SAML_CERT_PATH=/path/to/idp-cert.pem
+SAML_PRIVATE_KEY_PATH=/path/to/sp-private-key.pem
+SAML_WANT_ASSERTIONS_SIGNED=true
+SAML_WANT_RESPONSE_SIGNED=true
+SAML_SIGNATURE_ALGORITHM=sha256
+
+# Multi-Tenancy Configuration
+TENANCY_MODEL=shared_table
+TENANT_IDENTIFICATION=subdomain
+DEFAULT_TENANT_PLAN=free
+ENABLE_TENANT_SIGNUP=true
+TENANT_SUBDOMAIN_PATTERN=^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$
+TENANT_USAGE_TRACKING=true
+TENANT_BILLING_ENABLED=false
+
+# Internationalization (i18n)
+DEFAULT_LOCALE=en
+SUPPORTED_LOCALES=en,es,fr,de,ja,zh,ar
+FALLBACK_LOCALE=en
+ENABLE_RTL_SUPPORT=true
+TRANSLATION_CACHE_TTL=3600000
+AUTO_DETECT_LOCALE=true
+
+# Notification System
+ENABLE_EMAIL_NOTIFICATIONS=true
+ENABLE_IN_APP_NOTIFICATIONS=true
+ENABLE_SMS_NOTIFICATIONS=false
+ENABLE_PUSH_NOTIFICATIONS=false
+ENABLE_WEBHOOK_NOTIFICATIONS=false
+
+# SMS Notifications (Twilio)
+TWILIO_ACCOUNT_SID=your-twilio-account-sid
+TWILIO_AUTH_TOKEN=your-twilio-auth-token
+TWILIO_PHONE_NUMBER=+1234567890
+TWILIO_VERIFY_SERVICE_SID=your-verify-service-sid
+
+# Push Notifications (Firebase Cloud Messaging)
+FCM_SERVER_KEY=your-fcm-server-key
+FCM_SENDER_ID=your-fcm-sender-id
+APNS_KEY_ID=your-apns-key-id
+APNS_TEAM_ID=your-apns-team-id
+APNS_BUNDLE_ID=com.yourapp.mobile
+
+# Webhook Notifications
+WEBHOOK_RETRY_ATTEMPTS=3
+WEBHOOK_TIMEOUT_MS=5000
+WEBHOOK_SIGNATURE_SECRET=your-webhook-signature-secret
+
+# Scheduled Jobs & Background Tasks
+ENABLE_SCHEDULED_JOBS=true
+BACKUP_SCHEDULE=0 2 * * *
+USAGE_AGGREGATION_SCHEDULE=0 * * * *
+REPORT_GENERATION_SCHEDULE=0 8 * * 1
+CLEANUP_SCHEDULE=0 3 * * *
+LOG_RETENTION_DAYS=90
+INVOICE_GENERATION_SCHEDULE=0 9 1 * *
+
+# Job Queue Configuration
+QUEUE_CONCURRENCY=5
+QUEUE_MAX_RETRIES=5
+QUEUE_RETRY_DELAY=60000
+QUEUE_BACKOFF_TYPE=exponential
+ENABLE_JOB_DASHBOARD=true
+
+# Performance & Scalability
+ENABLE_CACHING=true
+CACHE_TTL=300
+ENABLE_QUERY_CACHING=true
+CONNECTION_POOL_SIZE=50
+MAX_CONCURRENT_REQUESTS=1000
+ENABLE_COMPRESSION=true
+COMPRESSION_THRESHOLD=1024
+
+# Load Balancing
+LOAD_BALANCER_ALGORITHM=round_robin
+HEALTH_CHECK_INTERVAL=30000
+HEALTH_CHECK_TIMEOUT=5000
+ENABLE_STICKY_SESSIONS=false
+SESSION_AFFINITY_COOKIE=SERVERID
+
+# Zero-Downtime Deployment
+DEPLOYMENT_STRATEGY=blue_green
+CANARY_ROLLOUT_PERCENTAGE=5
+FEATURE_FLAG_REFRESH_INTERVAL=60000
+GRACEFUL_SHUTDOWN_TIMEOUT=30000
+CONNECTION_DRAIN_TIMEOUT=10000
+
+# Security Operations
+VULNERABILITY_SCAN_SCHEDULE=0 4 * * *
+ENABLE_AUTO_PATCHING=false
+PATCH_APPROVAL_REQUIRED=true
+SECURITY_ALERT_EMAIL=security@yourapp.com
+ENABLE_SECURITY_HEADERS=true
+CSP_REPORT_URI=/api/csp-report
+
+# Compliance & Audit
+ENABLE_AUDIT_LOGGING=true
+AUDIT_LOG_RETENTION_DAYS=365
+PII_ENCRYPTION_ENABLED=true
+DATA_RETENTION_DAYS=2555
+ENABLE_GDPR_MODE=true
+GDPR_DPO_EMAIL=dpo@yourapp.com
 ```
 
 ---
