@@ -1,0 +1,39 @@
+# Development Environment Configuration
+
+project_name = "myapp"
+environment  = "dev"
+aws_region   = "us-east-1"
+
+# VPC - Minimal configuration
+vpc_cidr           = "10.2.0.0/16"
+availability_zones = ["us-east-1a"]
+public_subnets     = ["10.2.1.0/24"]
+private_subnets    = ["10.2.10.0/24"]
+enable_nat_gateway = true
+
+# RDS - Minimal configuration
+postgres_version            = "18.1"
+db_instance_class           = "db.t3.micro"
+db_allocated_storage        = 20
+db_max_allocated_storage    = 50
+db_name                     = "appdb"
+db_username                 = "dbadmin"
+db_password                 = "devpassword"
+db_backup_retention_period  = 1
+
+# Redis - Minimal
+redis_node_type = "cache.t3.micro"
+redis_num_nodes = 1
+redis_auth_token = "devtoken123"
+
+# ECS - Minimal
+ecs_task_cpu      = 256
+ecs_task_memory   = 512
+ecs_desired_count = 1
+ecs_min_capacity  = 1
+ecs_max_capacity  = 2
+
+container_image = "123456789012.dkr.ecr.us-east-1.amazonaws.com/myapp:dev"
+app_domain      = "dev.myapp.com"
+jwt_secret      = "dev_jwt_secret_32_characters_min"
+alert_emails    = ["dev@myapp.com"]

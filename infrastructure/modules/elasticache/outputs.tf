@@ -1,0 +1,9 @@
+output "endpoint" {
+  value = aws_elasticache_replication_group.main.primary_endpoint_address
+}
+output "port" {
+  value = var.port
+}
+output "arn" {
+  value = aws_elasticache_replication_group.main.arn
+}

@@ -1,0 +1,39 @@
+# Staging Environment Configuration
+
+project_name = "myapp"
+environment  = "staging"
+aws_region   = "us-east-1"
+
+# VPC - Smaller configuration for staging
+vpc_cidr           = "10.1.0.0/16"
+availability_zones = ["us-east-1a", "us-east-1b"]
+public_subnets     = ["10.1.1.0/24", "10.1.2.0/24"]
+private_subnets    = ["10.1.10.0/24", "10.1.11.0/24"]
+enable_nat_gateway = true
+
+# RDS - Smaller instance, shorter retention
+postgres_version            = "18.1"
+db_instance_class           = "db.t3.small"
+db_allocated_storage        = 50
+db_max_allocated_storage    = 100
+db_name                     = "appdb"
+db_username                 = "dbadmin"
+db_password                 = "CHANGE_ME"
+db_backup_retention_period  = 7
+
+# Redis - Single node
+redis_node_type = "cache.t3.small"
+redis_num_nodes = 1
+redis_auth_token = "CHANGE_ME"
+
+# ECS - Smaller tasks
+ecs_task_cpu      = 512
+ecs_task_memory   = 1024
+ecs_desired_count = 2
+ecs_min_capacity  = 1
+ecs_max_capacity  = 5
+
+container_image = "123456789012.dkr.ecr.us-east-1.amazonaws.com/myapp:staging"
+app_domain      = "staging.myapp.com"
+jwt_secret      = "CHANGE_ME_32_CHARACTERS_MINIMUM"
+alert_emails    = ["devops@myapp.com"]

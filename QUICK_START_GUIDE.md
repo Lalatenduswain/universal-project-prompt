@@ -1192,6 +1192,178 @@ kubectl get certificate -n myapp-prod
 
 See `/kubernetes/README.md` for complete documentation and advanced configurations.
 
+## Terraform Infrastructure as Code Quick Start
+
+Deploy complete cloud infrastructure on AWS (with GCP/Azure patterns) using Terraform.
+
+### 1. Prerequisites
+
+```bash
+# Install Terraform
+curl -fsSL https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_linux_amd64.zip -o terraform.zip
+unzip terraform.zip && sudo mv terraform /usr/local/bin/
+terraform version
+
+# Install AWS CLI
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip && sudo ./aws/install
+aws --version
+
+# Configure AWS credentials
+aws configure
+```
+
+### 2. Initialize and Deploy
+
+```bash
+# Navigate to infrastructure directory
+cd infrastructure
+
+# Initialize Terraform
+terraform init
+
+# Copy and configure variables
+cp environments/production/terraform.tfvars.example terraform.tfvars
+vim terraform.tfvars  # Edit with your values
+
+# Validate configuration
+terraform validate
+terraform fmt
+
+# Plan deployment
+terraform plan -out=tfplan
+
+# Apply configuration
+terraform apply tfplan
+
+# View outputs
+terraform output
+```
+
+### 3. Infrastructure Created
+
+```yaml
+AWS Resources:
+  - VPC (10.0.0.0/16) with 3 AZs
+  - Public subnets (3) for ALB
+  - Private subnets (3) for ECS, RDS, Redis
+  - Internet Gateway + NAT Gateways (3)
+  - Application Load Balancer with SSL/TLS
+  - ECS Fargate cluster (auto-scaling 2-10 tasks)
+  - RDS PostgreSQL (Multi-AZ, encrypted, automated backups)
+  - ElastiCache Redis (cluster mode, encrypted)
+  - S3 buckets with versioning
+  - Route53 DNS management
+  - ACM SSL certificates
+  - IAM roles with least-privilege
+  - CloudWatch monitoring and alarms
+  - Secrets Manager for secure secrets
+
+Security Features:
+  - Encryption at rest and in transit
+  - Multi-AZ high availability
+  - VPC Flow Logs for network monitoring
+  - Security groups with least-privilege
+  - Automated backups (30 days production)
+  - Secrets stored in Secrets Manager
+```
+
+### Environment Sizing
+
+```yaml
+Development ($50-75/month):
+  VPC: Single AZ
+  RDS: db.t3.micro, 20GB, 1-day backups
+  Redis: cache.t3.micro, single node
+  ECS: 256 CPU, 512 MB memory, 1 task
+
+Staging ($150-200/month):
+  VPC: 2 AZs
+  RDS: db.t3.small, 50GB, 7-day backups
+  Redis: cache.t3.small, single node
+  ECS: 512 CPU, 1GB memory, 2 tasks
+
+Production ($300-500/month):
+  VPC: 3 AZs with NAT Gateways
+  RDS: db.t3.medium, 100GB, Multi-AZ, 30-day backups
+  Redis: cache.t3.medium, 3 nodes, Multi-AZ
+  ECS: 1024 CPU, 2GB memory, 3-10 tasks (auto-scaling)
+
+Savings:
+  - Reserved Instances: 40-60% savings
+  - Auto-scaling: Pay for actual usage
+```
+
+### State Management
+
+```bash
+# Create S3 backend for remote state
+aws s3 mb s3://your-terraform-state-bucket
+aws s3api put-bucket-versioning --bucket your-terraform-state-bucket \
+  --versioning-configuration Status=Enabled
+
+# Enable encryption
+aws s3api put-bucket-encryption --bucket your-terraform-state-bucket \
+  --server-side-encryption-configuration \
+  '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+
+# Create DynamoDB table for state locking
+aws dynamodb create-table --table-name terraform-state-lock \
+  --attribute-definitions AttributeName=LockID,AttributeType=S \
+  --key-schema AttributeName=LockID,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST
+```
+
+### Common Operations
+
+```bash
+# View current state
+terraform show
+
+# List all resources
+terraform state list
+
+# View specific output
+terraform output alb_dns_name
+terraform output database_endpoint
+
+# Update infrastructure
+terraform plan
+terraform apply
+
+# Destroy infrastructure (use with caution!)
+terraform destroy
+
+# Switch environments
+terraform workspace new staging
+terraform workspace select production
+```
+
+### Troubleshooting
+
+```bash
+# Validate configuration
+terraform validate
+
+# Format code
+terraform fmt -recursive
+
+# Enable debug logging
+export TF_LOG=DEBUG
+terraform apply
+
+# Import existing resource
+terraform import module.vpc.aws_vpc.main vpc-12345678
+
+# Refresh state
+terraform refresh
+
+# Unlock state (if locked)
+terraform force-unlock <lock-id>
+```
+
+See `/infrastructure/README.md` for complete documentation, module details, and multi-cloud patterns.
+
 ---
 
 ## 📞 Need Help?

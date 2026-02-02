@@ -1,0 +1,60 @@
+# Production Environment Configuration
+# Copy this file to terraform.tfvars and fill in actual values
+
+# General Configuration
+project_name = "myapp"
+environment  = "production"
+aws_region   = "us-east-1"
+
+# VPC Configuration
+vpc_cidr           = "10.0.0.0/16"
+availability_zones = ["us-east-1a", "us-east-1b", "us-east-1c"]
+public_subnets     = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+private_subnets    = ["10.0.10.0/24", "10.0.11.0/24", "10.0.12.0/24"]
+enable_nat_gateway = true
+enable_vpn_gateway = false
+
+# RDS PostgreSQL Configuration
+postgres_version            = "18.1"
+db_instance_class           = "db.t3.medium"
+db_allocated_storage        = 100
+db_max_allocated_storage    = 500
+db_name                     = "appdb"
+db_username                 = "dbadmin"  # Change this
+db_password                 = "CHANGE_ME_STRONG_PASSWORD"  # Change this!
+db_backup_retention_period  = 30
+db_backup_window            = "03:00-04:00"
+db_maintenance_window       = "sun:04:00-sun:05:00"
+
+# ElastiCache Redis Configuration
+redis_version         = "7.1"
+redis_node_type       = "cache.t3.medium"
+redis_num_nodes       = 3
+redis_parameter_group = "default.redis7.cluster.on"
+redis_auth_token      = "CHANGE_ME_REDIS_TOKEN"  # Change this!
+
+# ECS Configuration
+container_image    = "123456789012.dkr.ecr.us-east-1.amazonaws.com/myapp:latest"
+app_port           = 3000
+ecs_task_cpu       = 1024
+ecs_task_memory    = 2048
+ecs_desired_count  = 3
+ecs_min_capacity   = 3
+ecs_max_capacity   = 10
+
+# Domain Configuration
+app_domain     = "myapp.com"
+domain_aliases = ["www.myapp.com", "api.myapp.com"]
+
+# Secrets Configuration
+jwt_secret = "CHANGE_ME_32_CHARACTERS_MINIMUM_JWT_SECRET_HERE"  # Change this!
+
+# Monitoring Configuration
+alert_emails = ["devops@myapp.com", "alerts@myapp.com"]
+
+# Additional Tags
+additional_tags = {
+  CostCenter = "Engineering"
+  Owner      = "DevOps Team"
+  Compliance = "SOC2"
+}

@@ -5689,6 +5689,425 @@ kubectl apply -f canary.yaml  # Automated progressive traffic shifting
 
 See `/kubernetes/README.md` for complete documentation.
 
+### Infrastructure as Code (Terraform)
+
+Production-ready Terraform configurations for deploying complete cloud infrastructure on AWS (with patterns for GCP and Azure).
+
+#### Quick Start
+
+```bash
+# Navigate to infrastructure directory
+cd infrastructure
+
+# Initialize Terraform
+terraform init
+
+# Configure variables
+cp environments/production/terraform.tfvars.example terraform.tfvars
+vim terraform.tfvars  # Edit with your values
+
+# Plan and apply
+terraform plan
+terraform apply
+
+# View outputs
+terraform output
+```
+
+#### Infrastructure Components
+
+```yaml
+Resources Created:
+  - VPC with public/private subnets (Multi-AZ)
+  - RDS PostgreSQL with automated backups
+  - ElastiCache Redis with encryption
+  - ECS Fargate for serverless containers
+  - Application Load Balancer with SSL/TLS
+  - S3 buckets with versioning
+  - CloudWatch monitoring and alarms
+  - IAM roles with least-privilege access
+  - Route53 DNS management
+  - ACM SSL/TLS certificates
+  - Secrets Manager for secure secrets
+
+Features:
+  - Multi-environment support (dev, staging, production)
+  - Remote state management (S3 + DynamoDB)
+  - Auto-scaling based on CPU/memory
+  - Automated backups and disaster recovery
+  - Encryption at rest and in transit
+  - VPC Flow Logs for network monitoring
+  - Cost optimization with environment-specific sizing
+```
+
+#### Main Configuration
+
+```hcl
+# infrastructure/main.tf
+terraform {
+  required_version = ">= 1.6.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+
+  # S3 backend for remote state
+  backend "s3" {
+    bucket         = "your-terraform-state-bucket"
+    key            = "production/terraform.tfstate"
+    region         = "us-east-1"
+    encrypt        = true
+    dynamodb_table = "terraform-state-lock"
+  }
+}
+
+provider "aws" {
+  region = var.aws_region
+
+  default_tags {
+    tags = {
+      Project     = var.project_name
+      Environment = var.environment
+      ManagedBy   = "Terraform"
+    }
+  }
+}
+
+# VPC Module
+module "vpc" {
+  source = "./modules/vpc"
+
+  project_name       = var.project_name
+  environment        = var.environment
+  vpc_cidr           = "10.0.0.0/16"
+  availability_zones = ["us-east-1a", "us-east-1b", "us-east-1c"]
+  public_subnets     = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+  private_subnets    = ["10.0.10.0/24", "10.0.11.0/24", "10.0.12.0/24"]
+  enable_nat_gateway = true
+}
+
+# RDS PostgreSQL Module
+module "database" {
+  source = "./modules/rds"
+
+  identifier        = "${var.project_name}-${var.environment}-db"
+  engine            = "postgres"
+  engine_version    = "18.1"
+  instance_class    = "db.t3.medium"
+  allocated_storage = 100
+
+  database_name = var.db_name
+  username      = var.db_username
+  password      = var.db_password
+
+  vpc_id             = module.vpc.vpc_id
+  subnet_ids         = module.vpc.private_subnet_ids
+  security_group_ids = [module.vpc.database_security_group_id]
+
+  backup_retention_period = 30
+  multi_az                = true
+  deletion_protection     = true
+  storage_encrypted       = true
+}
+
+# ElastiCache Redis Module
+module "cache" {
+  source = "./modules/elasticache"
+
+  cluster_id  = "${var.project_name}-${var.environment}-cache"
+  engine      = "redis"
+  node_type   = "cache.t3.medium"
+  num_nodes   = 3
+
+  vpc_id             = module.vpc.vpc_id
+  subnet_ids         = module.vpc.private_subnet_ids
+  security_group_ids = [module.vpc.cache_security_group_id]
+
+  at_rest_encryption_enabled = true
+  transit_encryption_enabled = true
+  auth_token                 = var.redis_auth_token
+  automatic_failover_enabled = true
+}
+
+# ECS Fargate Module
+module "ecs" {
+  source = "./modules/ecs"
+
+  cluster_name = "${var.project_name}-${var.environment}-cluster"
+  vpc_id       = module.vpc.vpc_id
+  subnet_ids   = module.vpc.private_subnet_ids
+
+  container_image = var.container_image
+  container_port  = 3000
+  task_cpu        = 1024
+  task_memory     = 2048
+
+  desired_count = 3
+  min_capacity  = 2
+  max_capacity  = 10
+
+  target_group_arn = module.alb.target_group_arn
+}
+
+# Application Load Balancer Module
+module "alb" {
+  source = "./modules/alb"
+
+  name            = "${var.project_name}-${var.environment}-alb"
+  vpc_id          = module.vpc.vpc_id
+  subnets         = module.vpc.public_subnet_ids
+  security_groups = [module.vpc.alb_security_group_id]
+
+  certificate_arn   = module.acm.certificate_arn
+  health_check_path = "/health"
+}
+```
+
+#### Environment-Specific Configurations
+
+```hcl
+# environments/production/terraform.tfvars
+project_name = "myapp"
+environment  = "production"
+aws_region   = "us-east-1"
+
+# VPC Configuration
+vpc_cidr           = "10.0.0.0/16"
+availability_zones = ["us-east-1a", "us-east-1b", "us-east-1c"]
+public_subnets     = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+private_subnets    = ["10.0.10.0/24", "10.0.11.0/24", "10.0.12.0/24"]
+
+# RDS - Production sizing
+postgres_version            = "18.1"
+db_instance_class           = "db.t3.medium"
+db_allocated_storage        = 100
+db_backup_retention_period  = 30
+
+# Redis - Production sizing
+redis_node_type = "cache.t3.medium"
+redis_num_nodes = 3
+
+# ECS - Production scaling
+ecs_task_cpu      = 1024
+ecs_task_memory   = 2048
+ecs_desired_count = 3
+ecs_min_capacity  = 2
+ecs_max_capacity  = 10
+
+# Domain
+app_domain = "myapp.com"
+```
+
+```hcl
+# environments/dev/terraform.tfvars
+project_name = "myapp"
+environment  = "dev"
+aws_region   = "us-east-1"
+
+# VPC - Minimal for dev
+vpc_cidr           = "10.2.0.0/16"
+availability_zones = ["us-east-1a"]
+public_subnets     = ["10.2.1.0/24"]
+private_subnets    = ["10.2.10.0/24"]
+
+# RDS - Minimal for dev
+db_instance_class          = "db.t3.micro"
+db_allocated_storage       = 20
+db_backup_retention_period = 1
+
+# Redis - Minimal for dev
+redis_node_type = "cache.t3.micro"
+redis_num_nodes = 1
+
+# ECS - Minimal for dev
+ecs_task_cpu      = 256
+ecs_task_memory   = 512
+ecs_desired_count = 1
+ecs_min_capacity  = 1
+ecs_max_capacity  = 2
+```
+
+#### Key Modules
+
+**VPC Module:**
+```hcl
+# Creates complete networking infrastructure
+- Multi-AZ public/private subnets
+- Internet Gateway for public access
+- NAT Gateways for private subnet internet access
+- Security Groups (ALB, App, Database, Cache)
+- VPC Flow Logs for monitoring
+```
+
+**RDS Module:**
+```hcl
+# PostgreSQL database with high availability
+- Multi-AZ deployment (production)
+- Automated daily backups (30-day retention)
+- Encryption at rest (AES-256)
+- Performance Insights enabled
+- CloudWatch Logs integration
+- Automated minor version upgrades
+```
+
+**ElastiCache Module:**
+```hcl
+# Redis cluster with encryption
+- Cluster mode with sharding
+- Encryption at rest and in transit
+- Automatic failover (Multi-AZ)
+- Auth token authentication
+- Automated backups
+```
+
+**ECS Module:**
+```hcl
+# Serverless container orchestration
+- ECS Fargate (no EC2 instances)
+- Auto-scaling (CPU/memory based)
+- Integration with ALB
+- CloudWatch Logs
+- Secrets Manager integration
+- IAM task roles
+```
+
+#### Deployment Workflow
+
+```bash
+# 1. Initialize Terraform
+terraform init
+
+# 2. Select workspace (environment)
+terraform workspace new production
+terraform workspace select production
+
+# 3. Validate configuration
+terraform validate
+terraform fmt -check
+
+# 4. Plan deployment
+terraform plan -out=tfplan
+
+# 5. Review plan
+terraform show tfplan
+
+# 6. Apply configuration
+terraform apply tfplan
+
+# 7. Verify deployment
+terraform output
+aws ecs describe-clusters --clusters myapp-production-cluster
+
+# 8. Access application
+curl https://$(terraform output -raw app_domain)
+```
+
+#### State Management
+
+```bash
+# Create S3 bucket for state
+aws s3 mb s3://your-terraform-state-bucket --region us-east-1
+
+# Enable versioning
+aws s3api put-bucket-versioning \
+  --bucket your-terraform-state-bucket \
+  --versioning-configuration Status=Enabled
+
+# Enable encryption
+aws s3api put-bucket-encryption \
+  --bucket your-terraform-state-bucket \
+  --server-side-encryption-configuration \
+  '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+
+# Create DynamoDB table for state locking
+aws dynamodb create-table \
+  --table-name terraform-state-lock \
+  --attribute-definitions AttributeName=LockID,AttributeType=S \
+  --key-schema AttributeName=LockID,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST
+```
+
+#### Disaster Recovery
+
+```bash
+# Backup RDS manually before major changes
+aws rds create-db-snapshot \
+  --db-instance-identifier myapp-production-db \
+  --db-snapshot-identifier myapp-db-backup-$(date +%Y%m%d)
+
+# Restore from snapshot
+aws rds restore-db-instance-from-db-snapshot \
+  --db-instance-identifier myapp-db-restored \
+  --db-snapshot-identifier myapp-db-backup-20260201
+
+# Recreate infrastructure from Terraform
+terraform init
+terraform apply -auto-approve
+```
+
+#### Multi-Cloud Support
+
+**Google Cloud Platform (GCP):**
+```hcl
+provider "google" {
+  project = var.gcp_project_id
+  region  = var.gcp_region
+}
+
+# Equivalent resources:
+# VPC → Google VPC
+# RDS → Cloud SQL
+# ElastiCache → Memorystore
+# ECS → Cloud Run / GKE
+# ALB → Cloud Load Balancing
+# S3 → Cloud Storage
+```
+
+**Microsoft Azure:**
+```hcl
+provider "azurerm" {
+  features {}
+}
+
+# Equivalent resources:
+# VPC → Virtual Network
+# RDS → Azure Database for PostgreSQL
+# ElastiCache → Azure Cache for Redis
+# ECS → Azure Container Instances / AKS
+# ALB → Application Gateway
+# S3 → Blob Storage
+```
+
+#### Cost Optimization
+
+```yaml
+Development ($50-75/month):
+  - db.t3.micro ($15/month)
+  - cache.t3.micro ($12/month)
+  - Single AZ
+  - 1-day backup retention
+  - Minimal ECS tasks
+
+Production ($300-500/month):
+  - db.t3.medium ($60/month)
+  - cache.t3.medium ($50/month)
+  - Multi-AZ deployment
+  - 30-day backup retention
+  - Auto-scaling ECS tasks
+
+Savings Strategies:
+  - Use Reserved Instances (40-60% savings)
+  - Enable auto-scaling (pay for actual usage)
+  - Use S3 Intelligent-Tiering
+  - Review CloudWatch retention periods
+  - Enable cost allocation tags
+```
+
+See `/infrastructure/README.md` for complete documentation.
+
 ### CI/CD Pipeline (Jenkins)
 ```groovy
 pipeline {
