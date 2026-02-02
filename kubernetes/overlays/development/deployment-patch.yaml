@@ -1,0 +1,38 @@
+---
+# Development deployment patches
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 1  # Single replica for development
+
+  template:
+    spec:
+      # Disable init containers in development for faster startup
+      initContainers: []
+
+      containers:
+        - name: app
+          # Lower resource limits for development
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+          # More verbose logging
+          env:
+            - name: LOG_LEVEL
+              value: "debug"
+
+          # Faster health checks
+          livenessProbe:
+            initialDelaySeconds: 10
+            periodSeconds: 10
+
+          readinessProbe:
+            initialDelaySeconds: 5
+            periodSeconds: 5

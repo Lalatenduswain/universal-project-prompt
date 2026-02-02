@@ -1,0 +1,206 @@
+---
+# Service Account for application pods
+# Provides identity for pods to interact with Kubernetes API
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: app-service-account
+  namespace: myapp
+  labels:
+    app.kubernetes.io/name: myapp
+    app.kubernetes.io/component: rbac
+automountServiceAccountToken: true
+
+---
+# Role - defines permissions within namespace
+# Allows application to read ConfigMaps and Secrets if needed
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: app-role
+  namespace: myapp
+  labels:
+    app.kubernetes.io/name: myapp
+    app.kubernetes.io/component: rbac
+rules:
+  # Read ConfigMaps (for dynamic configuration)
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+
+  # Read Secrets (for dynamic secrets - use with caution)
+  # - apiGroups: [""]
+  #   resources: ["secrets"]
+  #   verbs: ["get", "list"]
+
+  # Read Services (for service discovery)
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list"]
+
+  # Read Pods (for health checks, metrics)
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+
+  # Create Events (for logging important events)
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+
+---
+# RoleBinding - binds Role to ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: app-role-binding
+  namespace: myapp
+  labels:
+    app.kubernetes.io/name: myapp
+    app.kubernetes.io/component: rbac
+subjects:
+  - kind: ServiceAccount
+    name: app-service-account
+    namespace: myapp
+roleRef:
+  kind: Role
+  name: app-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ClusterRole - cluster-wide permissions (optional)
+# Use only if application needs to access resources across namespaces
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: ClusterRole
+# metadata:
+#   name: app-cluster-role
+#   labels:
+#     app.kubernetes.io/name: myapp
+#     app.kubernetes.io/component: rbac
+# rules:
+#   - apiGroups: [""]
+#     resources: ["nodes"]
+#     verbs: ["get", "list"]
+
+---
+# ClusterRoleBinding - binds ClusterRole to ServiceAccount
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: ClusterRoleBinding
+# metadata:
+#   name: app-cluster-role-binding
+#   labels:
+#     app.kubernetes.io/name: myapp
+#     app.kubernetes.io/component: rbac
+# subjects:
+#   - kind: ServiceAccount
+#     name: app-service-account
+#     namespace: myapp
+# roleRef:
+#   kind: ClusterRole
+#   name: app-cluster-role
+#   apiGroup: rbac.authorization.k8s.io
+
+---
+# NetworkPolicy - restrict pod network traffic
+# Requires network plugin that supports NetworkPolicy (Calico, Cilium, etc.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: app-network-policy
+  namespace: myapp
+  labels:
+    app.kubernetes.io/name: myapp
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: myapp
+      app.kubernetes.io/component: backend
+
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # Ingress rules (incoming traffic)
+  ingress:
+    # Allow traffic from Ingress Controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3000
+
+    # Allow traffic from pods in same namespace
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 3000
+
+  # Egress rules (outgoing traffic)
+  egress:
+    # Allow DNS queries
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+        - podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+
+    # Allow PostgreSQL access
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # Allow Redis access
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+
+    # Allow outbound HTTPS (for external APIs)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+
+    # Allow outbound HTTP (if needed)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 80
+
+    # Allow SMTP (for email)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 587
+        - protocol: TCP
+          port: 465
+
+    # Allow OpenTelemetry collector
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: observability
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318

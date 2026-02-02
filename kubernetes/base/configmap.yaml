@@ -1,0 +1,45 @@
+---
+# Application configuration (non-sensitive data)
+# Mount as environment variables or volume
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: myapp
+  labels:
+    app.kubernetes.io/name: myapp
+    app.kubernetes.io/component: configuration
+data:
+  # Application settings
+  NODE_ENV: "production"
+  PORT: "3000"
+  LOG_LEVEL: "info"
+
+  # Database settings (non-sensitive)
+  DATABASE_HOST: "postgres-service.myapp.svc.cluster.local"
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: "appdb"
+  DATABASE_POOL_MIN: "2"
+  DATABASE_POOL_MAX: "10"
+
+  # Redis settings
+  REDIS_HOST: "redis-service.myapp.svc.cluster.local"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+
+  # OpenTelemetry settings
+  OTEL_SERVICE_NAME: "myapp"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger-collector.observability.svc.cluster.local:4318/v1/traces"
+  OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "http://jaeger-collector.observability.svc.cluster.local:4318/v1/metrics"
+  OTEL_TRACES_SAMPLER: "parentbased_traceidratio"
+  OTEL_TRACES_SAMPLER_ARG: "0.1"
+  OTEL_LOG_LEVEL: "info"
+
+  # Feature flags
+  ENABLE_EMAIL_NOTIFICATIONS: "true"
+  ENABLE_SMS_NOTIFICATIONS: "false"
+  ENABLE_SCHEDULED_JOBS: "true"
+
+  # Rate limiting
+  RATE_LIMIT_WINDOW_MS: "60000"
+  RATE_LIMIT_MAX_REQUESTS: "100"

@@ -1,0 +1,86 @@
+---
+# ClusterIP Service (internal communication)
+# Used for pod-to-pod communication within cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service
+  namespace: myapp
+  labels:
+    app.kubernetes.io/name: myapp
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: myapp
+    app.kubernetes.io/component: backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+  sessionAffinity: None
+
+---
+# LoadBalancer Service (external access - optional)
+# Use this for direct external access without Ingress
+# WARNING: This will create a cloud load balancer (costs apply)
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-loadbalancer
+  namespace: myapp
+  labels:
+    app.kubernetes.io/name: myapp
+    app.kubernetes.io/component: backend
+  annotations:
+    # AWS Load Balancer annotations
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+
+    # GCP Load Balancer annotations
+    # cloud.google.com/load-balancer-type: "External"
+
+    # Azure Load Balancer annotations
+    # service.beta.kubernetes.io/azure-load-balancer-internal: "false"
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: myapp
+    app.kubernetes.io/component: backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+    - name: https
+      port: 443
+      targetPort: http
+      protocol: TCP
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800  # 3 hours
+
+---
+# Headless Service (for StatefulSets - optional)
+# Used when pods need stable network identities
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-headless
+  namespace: myapp
+  labels:
+    app.kubernetes.io/name: myapp
+    app.kubernetes.io/component: backend
+spec:
+  clusterIP: None  # Headless service
+  selector:
+    app.kubernetes.io/name: myapp
+    app.kubernetes.io/component: backend
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+      protocol: TCP

@@ -1,0 +1,97 @@
+---
+# Horizontal Pod Autoscaler
+# Automatically scales pod replicas based on CPU/memory metrics
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: app-hpa
+  namespace: myapp
+  labels:
+    app.kubernetes.io/name: myapp
+    app.kubernetes.io/component: autoscaling
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: app
+
+  # Scaling bounds
+  minReplicas: 3
+  maxReplicas: 10
+
+  # Scaling behavior (fine-grained control)
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Wait 5 min before scaling down
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60  # Max 50% scale down per minute
+        - type: Pods
+          value: 1
+          periodSeconds: 60  # Max 1 pod down per minute
+      selectPolicy: Min  # Use the policy that scales down least
+
+    scaleUp:
+      stabilizationWindowSeconds: 0  # Scale up immediately
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60  # Max 100% scale up per minute (double)
+        - type: Pods
+          value: 2
+          periodSeconds: 60  # Max 2 pods up per minute
+      selectPolicy: Max  # Use the policy that scales up most
+
+  # Metrics to monitor
+  metrics:
+    # CPU utilization
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70  # Scale when CPU > 70%
+
+    # Memory utilization
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80  # Scale when memory > 80%
+
+    # Custom metric: HTTP requests per second (requires metrics server)
+    # - type: Pods
+    #   pods:
+    #     metric:
+    #       name: http_requests_per_second
+    #     target:
+    #       type: AverageValue
+    #       averageValue: "1000"  # Scale when > 1000 RPS per pod
+
+---
+# Vertical Pod Autoscaler (optional - experimental)
+# Automatically adjusts CPU/memory requests based on actual usage
+# Requires VPA controller: kubectl apply -f https://github.com/kubernetes/autoscaler/releases/download/vertical-pod-autoscaler-0.14.0/vpa-v0.14.0.yaml
+# apiVersion: autoscaling.k8s.io/v1
+# kind: VerticalPodAutoscaler
+# metadata:
+#   name: app-vpa
+#   namespace: myapp
+# spec:
+#   targetRef:
+#     apiVersion: apps/v1
+#     kind: Deployment
+#     name: app
+#   updatePolicy:
+#     updateMode: "Auto"  # Or "Off" for recommendations only
+#   resourcePolicy:
+#     containerPolicies:
+#       - containerName: app
+#         minAllowed:
+#           cpu: "100m"
+#           memory: "256Mi"
+#         maxAllowed:
+#           cpu: "2000m"
+#           memory: "2Gi"

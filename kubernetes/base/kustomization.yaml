@@ -1,0 +1,42 @@
+# Kustomize configuration for base resources
+# Use: kubectl apply -k kubernetes/base
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Namespace to apply all resources
+namespace: myapp
+
+# Common labels for all resources
+commonLabels:
+  app.kubernetes.io/managed-by: kustomize
+
+# Resources to deploy
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - rbac.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  - hpa.yaml
+  - pdb.yaml
+
+# Images to customize (override with overlays)
+images:
+  - name: your-registry/your-app
+    newName: your-registry/your-app
+    newTag: latest
+
+# ConfigMap generator (alternative to configmap.yaml)
+# configMapGenerator:
+#   - name: app-config
+#     literals:
+#       - NODE_ENV=production
+#       - PORT=3000
+
+# Secret generator (alternative to secret.yaml)
+# secretGenerator:
+#   - name: app-secrets
+#     literals:
+#       - JWT_SECRET=your-secret-here

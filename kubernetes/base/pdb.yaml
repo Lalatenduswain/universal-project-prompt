@@ -1,0 +1,95 @@
+---
+# PodDisruptionBudget - ensure minimum availability during voluntary disruptions
+# Prevents too many pods from being down during node drains, upgrades, etc.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: app-pdb
+  namespace: myapp
+  labels:
+    app.kubernetes.io/name: myapp
+    app.kubernetes.io/component: availability
+spec:
+  # Minimum available pods during disruption
+  minAvailable: 2
+
+  # OR use maxUnavailable instead
+  # maxUnavailable: 1
+
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: myapp
+      app.kubernetes.io/component: backend
+
+---
+# ResourceQuota - limit resource consumption in namespace
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: app-resource-quota
+  namespace: myapp
+  labels:
+    app.kubernetes.io/name: myapp
+    app.kubernetes.io/component: quota
+spec:
+  hard:
+    # Limit total CPU/memory requests
+    requests.cpu: "10"
+    requests.memory: "20Gi"
+
+    # Limit total CPU/memory limits
+    limits.cpu: "20"
+    limits.memory: "40Gi"
+
+    # Limit number of objects
+    pods: "50"
+    services: "10"
+    configmaps: "20"
+    secrets: "20"
+    persistentvolumeclaims: "10"
+
+    # Limit storage
+    requests.storage: "100Gi"
+
+---
+# LimitRange - default resource limits for pods/containers
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: app-limit-range
+  namespace: myapp
+  labels:
+    app.kubernetes.io/name: myapp
+    app.kubernetes.io/component: quota
+spec:
+  limits:
+    # Container limits
+    - type: Container
+      default:
+        cpu: "500m"
+        memory: "512Mi"
+      defaultRequest:
+        cpu: "100m"
+        memory: "128Mi"
+      max:
+        cpu: "2000m"
+        memory: "2Gi"
+      min:
+        cpu: "50m"
+        memory: "64Mi"
+
+    # Pod limits
+    - type: Pod
+      max:
+        cpu: "4000m"
+        memory: "4Gi"
+      min:
+        cpu: "50m"
+        memory: "64Mi"
+
+    # PersistentVolumeClaim limits
+    - type: PersistentVolumeClaim
+      max:
+        storage: "10Gi"
+      min:
+        storage: "1Gi"

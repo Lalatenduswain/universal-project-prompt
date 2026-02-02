@@ -108,6 +108,7 @@ The complete master prompt containing:
 - ✅ **Production Deployment Guides**
   - Cloudflare (DNS, WAF, Tunnels, Workers)
   - Docker 29.x containerization
+  - Kubernetes (K8s) manifests with Kustomize overlays
   - Nginx 1.29.x configuration
   - Jenkins 2.546+ CI/CD pipelines
   - Auto-start after server reboot
@@ -821,8 +822,9 @@ Special thanks to the AI-assisted development community for pioneering new ways 
 ## 🗺️ Roadmap
 
 ### Version 2.1 (Q2 2026)
+- [x] Kubernetes deployment configuration (Added in v2.0.1)
+- [x] OpenTelemetry distributed tracing (Added in v2.0.1)
 - [ ] GraphQL API template
-- [ ] Kubernetes deployment configuration
 - [ ] Terraform infrastructure-as-code
 - [ ] Additional compliance: CCPA, LGPD
 - [ ] Machine Learning integration templates

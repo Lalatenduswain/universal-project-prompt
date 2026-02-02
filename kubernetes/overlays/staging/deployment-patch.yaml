@@ -1,0 +1,21 @@
+---
+# Staging deployment patches
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 2  # 2 replicas for staging
+
+  template:
+    spec:
+      containers:
+        - name: app
+          # Moderate resource limits for staging
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"

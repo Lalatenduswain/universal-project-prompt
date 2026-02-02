@@ -1088,6 +1088,110 @@ Industry Standard:
   - CNCF graduated project
 ```
 
+## Kubernetes Deployment Quick Start
+
+Deploy your application to any Kubernetes cluster (EKS, GKE, AKS, on-premises) with production-ready manifests.
+
+### 1. Prerequisites
+
+```bash
+# Install kubectl
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+
+# Install cluster components
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.9.4/deploy/static/provider/cloud/deploy.yaml
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.2/cert-manager.yaml
+```
+
+### 2. Configure and Deploy
+
+```bash
+# Create namespace
+kubectl create namespace myapp-prod
+
+# Create secrets securely
+kubectl create secret generic app-secrets \
+  --namespace=myapp-prod \
+  --from-literal=DATABASE_URL="postgresql://user:pass@host:5432/db" \
+  --from-literal=JWT_SECRET="$(openssl rand -base64 32)" \
+  --from-literal=SESSION_SECRET="$(openssl rand -base64 32)"
+
+# Deploy to production
+kubectl apply -k kubernetes/overlays/production
+
+# Verify deployment
+kubectl get all -n myapp-prod
+kubectl logs -f deployment/prod-app -n myapp-prod
+```
+
+### 3. Monitor and Scale
+
+```bash
+# Check pod health and resource usage
+kubectl get pods -n myapp-prod
+kubectl top pods -n myapp-prod
+
+# View HPA status (auto-scaling)
+kubectl get hpa -n myapp-prod
+
+# Manual scaling (if needed)
+kubectl scale deployment/prod-app --replicas=5 -n myapp-prod
+
+# View logs
+kubectl logs -l app.kubernetes.io/name=myapp -n myapp-prod --tail=100 -f
+```
+
+### Key Features
+
+```yaml
+Architecture:
+  - Base manifests + Kustomize overlays (dev, staging, prod)
+  - Zero-downtime rolling updates
+  - Auto-scaling (3-10 replicas based on CPU/memory)
+  - Health checks (liveness, readiness, startup probes)
+
+Security:
+  - Non-root containers with read-only filesystem
+  - Network policies (restrict pod traffic)
+  - RBAC with minimal permissions
+  - Automated SSL with cert-manager (Let's Encrypt)
+  - Secret management (kubectl, Sealed Secrets, External Secrets)
+
+Deployment Strategies:
+  - Rolling updates (default)
+  - Blue-green deployment
+  - Canary deployment (with Flagger)
+
+Cloud Providers:
+  - Amazon EKS
+  - Google GKE
+  - Azure AKS
+  - Local development (Minikube/Kind)
+```
+
+### Troubleshooting
+
+```bash
+# Pod not starting
+kubectl describe pod <pod-name> -n myapp-prod
+kubectl logs <pod-name> -n myapp-prod --previous
+
+# Database connection issues
+kubectl exec -it <pod-name> -n myapp-prod -- nc -zv postgres-service 5432
+
+# Test without Ingress
+kubectl port-forward service/app-service 8080:80 -n myapp-prod
+curl http://localhost:8080
+
+# Check Ingress and SSL
+kubectl get ingress -n myapp-prod
+kubectl get certificate -n myapp-prod
+```
+
+See `/kubernetes/README.md` for complete documentation and advanced configurations.
+
 ---
 
 ## 📞 Need Help?

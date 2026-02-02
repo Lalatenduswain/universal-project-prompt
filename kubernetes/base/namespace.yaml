@@ -1,0 +1,11 @@
+---
+# Namespace for application resources
+# Provides logical isolation and resource quotas
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: myapp
+  labels:
+    app.kubernetes.io/name: myapp
+    app.kubernetes.io/managed-by: kubectl
+    environment: production

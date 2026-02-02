@@ -1,0 +1,42 @@
+# Development environment overlay
+# Use: kubectl apply -k kubernetes/overlays/development
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Reference base configuration
+resources:
+  - ../../base
+
+# Namespace override
+namespace: myapp-dev
+
+# Name prefix for resources
+namePrefix: dev-
+
+# Common labels for development
+commonLabels:
+  environment: development
+
+# Patches for development
+patchesStrategicMerge:
+  - deployment-patch.yaml
+  - hpa-patch.yaml
+
+# ConfigMap overrides for development
+configMapGenerator:
+  - name: app-config
+    behavior: merge
+    literals:
+      - NODE_ENV=development
+      - LOG_LEVEL=debug
+      - OTEL_TRACES_SAMPLER_ARG=1.0  # 100% sampling in dev
+
+# Image overrides
+images:
+  - name: your-registry/your-app
+    newTag: dev-latest
+
+# Replicas (can be overridden)
+replicas:
+  - name: app
+    count: 1

@@ -5118,6 +5118,577 @@ volumes:
   minio_data:
 ```
 
+### Kubernetes Deployment
+
+Production-ready Kubernetes manifests with Kustomize overlays for multi-environment deployments (development, staging, production).
+
+#### Quick Start
+
+```bash
+# Deploy to development environment
+kubectl apply -k kubernetes/overlays/development
+
+# Deploy to production environment
+kubectl apply -k kubernetes/overlays/production
+
+# Verify deployment
+kubectl get all -n myapp-prod
+kubectl logs -f deployment/prod-app -n myapp-prod
+```
+
+#### Architecture Overview
+
+```yaml
+Directory Structure:
+  kubernetes/
+    base/                     # Base manifests (environment-agnostic)
+      - namespace.yaml       # Namespace definition
+      - configmap.yaml       # Non-sensitive configuration
+      - secret.yaml          # Secret template
+      - deployment.yaml      # Application deployment
+      - service.yaml         # Service definitions
+      - ingress.yaml         # Ingress routing
+      - hpa.yaml             # Horizontal Pod Autoscaler
+      - rbac.yaml            # RBAC configuration
+      - pdb.yaml             # PodDisruptionBudget & quotas
+
+    overlays/                # Environment-specific overlays
+      development/           # Dev environment (1 replica, debug mode)
+      staging/               # Staging environment (2 replicas)
+      production/            # Production (3-10 replicas, anti-affinity)
+
+Key Features:
+  - Zero-downtime rolling updates
+  - Auto-scaling (CPU/memory based)
+  - Health checks (liveness, readiness, startup probes)
+  - Resource limits and requests
+  - Network policies for pod isolation
+  - RBAC with minimal permissions
+  - Pod security (non-root, read-only filesystem)
+  - Automated SSL with cert-manager
+  - Multi-environment with Kustomize overlays
+```
+
+#### Deployment Manifest
+
+```yaml
+# kubernetes/base/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  namespace: myapp
+  labels:
+    app.kubernetes.io/name: myapp
+    app.kubernetes.io/version: "1.0.0"
+spec:
+  replicas: 3
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0  # Zero-downtime
+
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: myapp
+
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: myapp
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+
+    spec:
+      serviceAccountName: app-service-account
+
+      # Security context
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+      # Init containers
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres-service 5432; do sleep 2; done']
+
+        - name: run-migrations
+          image: your-registry/your-app:latest
+          command: ['npx', 'prisma', 'migrate', 'deploy']
+          envFrom:
+            - configMapRef:
+                name: app-config
+            - secretRef:
+                name: app-secrets
+
+      # Main container
+      containers:
+        - name: app
+          image: your-registry/your-app:latest
+          imagePullPolicy: Always
+
+          ports:
+            - name: http
+              containerPort: 3000
+
+          envFrom:
+            - configMapRef:
+                name: app-config
+            - secretRef:
+                name: app-secrets
+
+          # Resource limits
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+
+          # Health checks
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 3
+
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            failureThreshold: 30
+            periodSeconds: 10
+
+          # Security
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+```
+
+#### Service & Ingress
+
+```yaml
+# ClusterIP Service (internal)
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service
+  namespace: myapp
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: myapp
+  ports:
+    - port: 80
+      targetPort: 3000
+
+---
+# Ingress with automatic SSL
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-ingress
+  namespace: myapp
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+spec:
+  tls:
+    - hosts:
+        - yourdomain.com
+      secretName: app-tls-secret
+  rules:
+    - host: yourdomain.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app-service
+                port:
+                  number: 80
+```
+
+#### Horizontal Pod Autoscaler
+
+```yaml
+# kubernetes/base/hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: app-hpa
+  namespace: myapp
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: app
+
+  minReplicas: 3
+  maxReplicas: 10
+
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+```
+
+#### Kustomize Overlays
+
+```yaml
+# kubernetes/overlays/production/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+namespace: myapp-prod
+namePrefix: prod-
+
+commonLabels:
+  environment: production
+
+# Patches for production
+patchesStrategicMerge:
+  - deployment-patch.yaml
+
+# Image override
+images:
+  - name: your-registry/your-app
+    newTag: v1.0.0
+
+# ConfigMap overrides
+configMapGenerator:
+  - name: app-config
+    behavior: merge
+    literals:
+      - NODE_ENV=production
+      - OTEL_TRACES_SAMPLER_ARG=0.1
+
+replicas:
+  - name: app
+    count: 3
+```
+
+#### Secret Management
+
+```bash
+# Method 1: kubectl create secret
+kubectl create secret generic app-secrets \
+  --namespace=myapp \
+  --from-literal=DATABASE_URL="postgresql://..." \
+  --from-literal=JWT_SECRET="$(openssl rand -base64 32)"
+
+# Method 2: Sealed Secrets (encrypted in git)
+kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.24.0/controller.yaml
+kubeseal --format=yaml < secret.yaml > sealed-secret.yaml
+
+# Method 3: External Secrets Operator (AWS, Vault, etc.)
+helm install external-secrets external-secrets/external-secrets
+kubectl apply -f external-secret.yaml
+```
+
+#### RBAC Configuration
+
+```yaml
+# kubernetes/base/rbac.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: app-service-account
+  namespace: myapp
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: app-role
+  namespace: myapp
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "services", "pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: app-role-binding
+  namespace: myapp
+subjects:
+  - kind: ServiceAccount
+    name: app-service-account
+roleRef:
+  kind: Role
+  name: app-role
+  apiGroup: rbac.authorization.k8s.io
+```
+
+#### Network Policies
+
+```yaml
+# kubernetes/base/rbac.yaml (network policies section)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: app-network-policy
+  namespace: myapp
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: myapp
+
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3000
+
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+
+    # Allow PostgreSQL
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # Allow Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+
+    # Allow HTTPS (external APIs)
+    - ports:
+        - protocol: TCP
+          port: 443
+```
+
+#### Prerequisites Installation
+
+```bash
+# Install kubectl
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+
+# Install Metrics Server (for HPA)
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+
+# Install Nginx Ingress Controller
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.9.4/deploy/static/provider/cloud/deploy.yaml
+
+# Install Cert-Manager (for SSL)
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.2/cert-manager.yaml
+
+# Verify installations
+kubectl get pods -n kube-system
+kubectl get pods -n ingress-nginx
+kubectl get pods -n cert-manager
+```
+
+#### Deployment Steps
+
+```bash
+# 1. Create namespace
+kubectl create namespace myapp-prod
+
+# 2. Create secrets
+kubectl create secret generic app-secrets \
+  --namespace=myapp-prod \
+  --from-literal=DATABASE_URL="postgresql://..." \
+  --from-literal=JWT_SECRET="$(openssl rand -base64 32)" \
+  --from-literal=SESSION_SECRET="$(openssl rand -base64 32)"
+
+# 3. Deploy application
+kubectl apply -k kubernetes/overlays/production
+
+# 4. Verify deployment
+kubectl get all -n myapp-prod
+kubectl rollout status deployment/prod-app -n myapp-prod
+
+# 5. Check pod health
+kubectl get pods -n myapp-prod -o wide
+kubectl top pods -n myapp-prod
+
+# 6. View logs
+kubectl logs -f deployment/prod-app -n myapp-prod
+
+# 7. Check HPA status
+kubectl get hpa -n myapp-prod
+```
+
+#### Monitoring & Troubleshooting
+
+```bash
+# Check pod status
+kubectl get pods -n myapp-prod
+kubectl describe pod <pod-name> -n myapp-prod
+
+# View logs
+kubectl logs <pod-name> -n myapp-prod --tail=100 -f
+kubectl logs <pod-name> -n myapp-prod --previous  # Previous crashed container
+
+# Check events
+kubectl get events -n myapp-prod --sort-by='.lastTimestamp'
+
+# Test health endpoints
+kubectl exec -it <pod-name> -n myapp-prod -- curl localhost:3000/health
+
+# Port forward for local testing
+kubectl port-forward service/app-service 8080:80 -n myapp-prod
+
+# Check resource usage
+kubectl top pods -n myapp-prod
+kubectl top nodes
+
+# Scale manually (HPA will override)
+kubectl scale deployment/prod-app --replicas=5 -n myapp-prod
+
+# Restart deployment
+kubectl rollout restart deployment/prod-app -n myapp-prod
+
+# Rollback deployment
+kubectl rollout undo deployment/prod-app -n myapp-prod
+```
+
+#### Cloud Provider Deployment
+
+**Amazon EKS:**
+```bash
+# Create cluster
+eksctl create cluster --name myapp --region us-east-1 --nodes 3
+
+# Install AWS Load Balancer Controller
+helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+  --set clusterName=myapp
+```
+
+**Google GKE:**
+```bash
+# Create cluster
+gcloud container clusters create myapp --num-nodes=3 --region=us-central1
+
+# Get credentials
+gcloud container clusters get-credentials myapp --region=us-central1
+```
+
+**Azure AKS:**
+```bash
+# Create cluster
+az aks create --resource-group myapp-rg --name myapp --node-count 3
+
+# Get credentials
+az aks get-credentials --resource-group myapp-rg --name myapp
+```
+
+**Local Development (Minikube):**
+```bash
+# Install and start Minikube
+minikube start --cpus=4 --memory=8192
+
+# Enable addons
+minikube addons enable ingress
+minikube addons enable metrics-server
+
+# Deploy
+kubectl apply -k kubernetes/overlays/development
+
+# Access via tunnel
+minikube tunnel
+```
+
+#### Advanced Features
+
+**Blue-Green Deployment:**
+```bash
+# Deploy new version
+kubectl apply -k kubernetes/overlays/production -l version=v2.0.0
+
+# Switch traffic
+kubectl patch service app-service -p '{"spec":{"selector":{"version":"v2.0.0"}}}'
+```
+
+**Canary Deployment (with Flagger):**
+```bash
+# Install Flagger
+helm install flagger flagger/flagger --namespace ingress-nginx
+
+# Create Canary resource
+kubectl apply -f canary.yaml  # Automated progressive traffic shifting
+```
+
+See `/kubernetes/README.md` for complete documentation.
+
 ### CI/CD Pipeline (Jenkins)
 ```groovy
 pipeline {
