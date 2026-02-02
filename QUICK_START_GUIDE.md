@@ -1688,6 +1688,373 @@ See `UNIVERSAL_PROJECT_PROMPT.md` section "E. AI/ML Integration Patterns" for co
 
 ---
 
+## ☁️ Serverless Architecture Quick Start
+
+Deploy pay-per-use serverless applications with AWS Lambda, Cloudflare Workers, or other serverless platforms.
+
+### When to Choose Serverless
+
+**Choose Serverless:**
+- ✅ Sporadic/unpredictable traffic (10-1000 req/min)
+- ✅ Cost optimization critical (pay-per-execution)
+- ✅ Zero infrastructure management desired
+- ✅ Event-driven architecture (webhooks, file uploads, queues)
+- ✅ Rapid prototyping and deployment
+
+**Choose Containers (Kubernetes/ECS):**
+- ❌ Consistent 24/7 traffic (always-on cheaper)
+- ❌ Long-running processes (>15 minutes)
+- ❌ WebSocket connections needed
+- ❌ Sub-10ms latency required (except Cloudflare Workers)
+
+### Option 1: AWS Lambda + Serverless Framework (Recommended)
+
+**1. Install Serverless Framework:**
+```bash
+npm install -g serverless
+npm install --save-dev serverless-offline serverless-plugin-typescript
+```
+
+**2. Create serverless.yml:**
+```yaml
+service: your-app-api
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: us-east-1
+  stage: ${opt:stage, 'dev'}
+  environment:
+    USERS_TABLE: ${self:service}-users-${self:provider.stage}
+
+functions:
+  getUser:
+    handler: lambda/handlers/users.getUser
+    events:
+      - http:
+          path: users/{userId}
+          method: get
+          cors: true
+
+  createUser:
+    handler: lambda/handlers/users.createUser
+    events:
+      - http:
+          path: users
+          method: post
+          cors: true
+
+resources:
+  Resources:
+    UsersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.USERS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+```
+
+**3. Create Lambda Handler:**
+```typescript
+// lambda/handlers/users.ts
+import { APIGatewayProxyHandler } from 'aws-lambda';
+import { DynamoDB } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocument } from '@aws-sdk/lib-dynamodb';
+
+const dynamodb = DynamoDBDocument.from(new DynamoDB({}));
+
+export const getUser: APIGatewayProxyHandler = async (event) => {
+  const { userId } = event.pathParameters || {};
+
+  const result = await dynamodb.get({
+    TableName: process.env.USERS_TABLE!,
+    Key: { userId },
+  });
+
+  if (!result.Item) {
+    return { statusCode: 404, body: JSON.stringify({ error: 'Not found' }) };
+  }
+
+  return {
+    statusCode: 200,
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+    body: JSON.stringify(result.Item),
+  };
+};
+
+export const createUser: APIGatewayProxyHandler = async (event) => {
+  const data = JSON.parse(event.body || '{}');
+
+  const user = {
+    userId: crypto.randomUUID(),
+    email: data.email,
+    name: data.name,
+    createdAt: new Date().toISOString(),
+  };
+
+  await dynamodb.put({
+    TableName: process.env.USERS_TABLE!,
+    Item: user,
+  });
+
+  return {
+    statusCode: 201,
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+    body: JSON.stringify(user),
+  };
+};
+```
+
+**4. Deploy:**
+```bash
+# Deploy to dev
+serverless deploy --stage dev
+
+# Deploy to production
+serverless deploy --stage prod
+
+# View logs
+serverless logs --function getUser --tail
+
+# Local testing
+serverless offline
+```
+
+### Option 2: Cloudflare Workers (Edge Functions)
+
+**1. Install Wrangler:**
+```bash
+npm install -g wrangler
+wrangler login
+```
+
+**2. Create wrangler.toml:**
+```toml
+name = "your-app-api"
+main = "workers/api.ts"
+compatibility_date = "2024-01-01"
+
+[[kv_namespaces]]
+binding = "USERS_KV"
+id = "your-kv-namespace-id"
+```
+
+**3. Create Worker:**
+```typescript
+// workers/api.ts
+export interface Env {
+  USERS_KV: KVNamespace;
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+
+    if (url.pathname.startsWith('/api/users/')) {
+      const userId = url.pathname.split('/').pop();
+
+      if (request.method === 'GET') {
+        const user = await env.USERS_KV.get(userId, 'json');
+        if (!user) {
+          return new Response(JSON.stringify({ error: 'Not found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        return new Response(JSON.stringify(user), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      if (request.method === 'POST') {
+        const data = await request.json();
+        const user = {
+          id: crypto.randomUUID(),
+          ...data,
+          createdAt: new Date().toISOString(),
+        };
+        await env.USERS_KV.put(user.id, JSON.stringify(user));
+        return new Response(JSON.stringify(user), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    return new Response('Not Found', { status: 404 });
+  },
+};
+```
+
+**4. Deploy:**
+```bash
+# Create KV namespace
+wrangler kv:namespace create "USERS_KV"
+
+# Deploy
+wrangler deploy
+
+# View logs
+wrangler tail
+```
+
+### Serverless Databases
+
+**DynamoDB (AWS - Key-Value):**
+```typescript
+await dynamodb.put({
+  TableName: 'users',
+  Item: { userId: '123', name: 'John' }
+});
+```
+
+**Planetscale (MySQL - Serverless):**
+```typescript
+import { PlanetScaleClient } from '@planetscale/database';
+
+const db = new PlanetScaleClient({
+  host: process.env.DATABASE_HOST,
+  username: process.env.DATABASE_USERNAME,
+  password: process.env.DATABASE_PASSWORD,
+});
+
+const result = await db.execute('SELECT * FROM users WHERE id = ?', ['123']);
+```
+
+**Cloudflare D1 (SQLite - Edge):**
+```typescript
+const result = await env.DB.prepare('SELECT * FROM users WHERE id = ?')
+  .bind('123')
+  .first();
+```
+
+### Cold Start Optimization
+
+**Problem:** First request after idle = 100-1000ms delay
+
+**Solutions:**
+1. **Provisioned Concurrency** (AWS): Always-warm instances
+   ```yaml
+   functions:
+     getUser:
+       provisionedConcurrency: 5  # Keep 5 warm
+   ```
+
+2. **Initialize Outside Handler:**
+   ```typescript
+   // ✅ Good - Initialize once
+   const dynamodb = new DynamoDB();
+   export const handler = async (event) => { /* ... */ };
+
+   // ❌ Bad - Initialize every time
+   export const handler = async (event) => {
+     const dynamodb = new DynamoDB();  // Penalty on every call!
+   };
+   ```
+
+3. **Optimize Bundle Size:**
+   - Use webpack/esbuild to tree-shake dependencies
+   - Exclude AWS SDK (already in Lambda runtime)
+   - Minimize package.json dependencies
+
+### Platform Comparison
+
+| Feature | AWS Lambda | Cloudflare Workers | Google Cloud Functions |
+|---------|------------|-------------------|----------------------|
+| **Cold Start** | 100-1000ms | <1ms | 100-800ms |
+| **Max Duration** | 15 minutes | 30 seconds | 60 minutes |
+| **Pricing** | $0.20/1M | $0.50/1M | $0.40/1M |
+| **Free Tier** | 1M req/month | 100k req/day | 2M req/month |
+| **Best For** | Backend APIs | Edge/CDN | Data processing |
+
+### Monitoring & Debugging
+
+**CloudWatch Logs (AWS):**
+```bash
+# View logs
+serverless logs --function getUser --tail
+
+# CloudWatch Insights query
+fields @timestamp, @message
+| filter @message like /ERROR/
+| sort @timestamp desc
+| limit 20
+```
+
+**X-Ray Tracing:**
+```typescript
+import AWSXRay from 'aws-xray-sdk-core';
+const dynamodb = AWSXRay.captureAWSClient(new AWS.DynamoDB());
+```
+
+### Cost Estimation
+
+**Example: 1M requests/month, 512MB memory, 200ms avg duration**
+
+| Platform | Monthly Cost |
+|----------|--------------|
+| AWS Lambda | ~$6-8 |
+| Cloudflare Workers | ~$5 |
+| Google Cloud Functions | ~$8-10 |
+| ECS Fargate (always-on) | ~$50-70 |
+
+**Serverless wins at <10M requests/month!**
+
+### Environment Variables
+
+```env
+# AWS Lambda
+AWS_REGION=us-east-1
+USERS_TABLE=your-app-users-dev
+
+# Cloudflare Workers
+CLOUDFLARE_ACCOUNT_ID=your-account-id
+CLOUDFLARE_API_TOKEN=your-api-token
+
+# Database
+PLANETSCALE_HOST=aws.connect.psdb.cloud
+PLANETSCALE_USERNAME=your-username
+PLANETSCALE_PASSWORD=your-password
+```
+
+### CI/CD with GitHub Actions
+
+```yaml
+# .github/workflows/deploy-lambda.yml
+name: Deploy Lambda
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm ci
+      - name: Deploy
+        run: npx serverless deploy --stage prod
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+```
+
+See `UNIVERSAL_PROJECT_PROMPT.md` section "F. Serverless Architecture Templates" for complete implementations including AWS SAM, authentication (Cognito, Auth0), scheduled functions, S3 triggers, and hybrid serverless+container architectures.
+
+---
+
 ## 📞 Need Help?
 
 ### Common Questions

@@ -8847,6 +8847,1130 @@ AI/ML Metrics:
   - AIRateLimitExceeded (count)
 ```
 
+### F. Serverless Architecture Templates
+
+**Overview:**
+Serverless architectures enable applications to run without managing servers, automatically scaling from zero to thousands of concurrent executions while paying only for actual compute time. This section provides production-ready patterns for major serverless platforms.
+
+**Benefits:**
+- **Cost Optimization:** Pay-per-execution pricing model (vs. always-running containers)
+- **Auto-Scaling:** Automatic scaling from 0 to thousands of concurrent requests
+- **Low Latency:** Edge functions execute close to users globally (<10ms latency)
+- **Reduced Operations:** No server management, patching, or infrastructure maintenance
+- **Rapid Deployment:** Deploy code changes in seconds
+
+**Use Cases:**
+- REST APIs with sporadic traffic (10-1000 req/min)
+- Event-driven processing (file uploads, webhooks, queue processing)
+- Scheduled tasks (cron jobs, data aggregation)
+- Edge computing (authentication, A/B testing, redirects)
+- Microservices with independent scaling requirements
+
+---
+
+#### AWS Lambda Serverless API
+
+**Architecture Pattern:**
+```
+User → API Gateway → Lambda Functions → DynamoDB/RDS
+                   ↓
+                  CloudWatch Logs
+```
+
+**Lambda Handler Implementation:**
+```typescript
+// lambda/handlers/users.ts
+import { APIGatewayProxyHandler } from 'aws-lambda';
+import { DynamoDB } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocument } from '@aws-sdk/lib-dynamodb';
+
+const dynamodb = DynamoDBDocument.from(new DynamoDB({}));
+const USERS_TABLE = process.env.USERS_TABLE!;
+
+// GET /users/{userId}
+export const getUser: APIGatewayProxyHandler = async (event) => {
+  const { userId } = event.pathParameters || {};
+
+  if (!userId) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ error: 'userId is required' }),
+    };
+  }
+
+  try {
+    const result = await dynamodb.get({
+      TableName: USERS_TABLE,
+      Key: { userId },
+    });
+
+    if (!result.Item) {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({ error: 'User not found' }),
+      };
+    }
+
+    return {
+      statusCode: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
+      body: JSON.stringify(result.Item),
+    };
+  } catch (error) {
+    console.error('Error fetching user:', error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Internal server error' }),
+    };
+  }
+};
+
+// POST /users
+export const createUser: APIGatewayProxyHandler = async (event) => {
+  try {
+    const data = JSON.parse(event.body || '{}');
+
+    // Validation
+    if (!data.email || !data.name) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: 'email and name are required' }),
+      };
+    }
+
+    const user = {
+      userId: crypto.randomUUID(),
+      email: data.email,
+      name: data.name,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await dynamodb.put({
+      TableName: USERS_TABLE,
+      Item: user,
+      ConditionExpression: 'attribute_not_exists(userId)',
+    });
+
+    return {
+      statusCode: 201,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
+      body: JSON.stringify(user),
+    };
+  } catch (error) {
+    console.error('Error creating user:', error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Internal server error' }),
+    };
+  }
+};
+
+// PUT /users/{userId}
+export const updateUser: APIGatewayProxyHandler = async (event) => {
+  const { userId } = event.pathParameters || {};
+  const data = JSON.parse(event.body || '{}');
+
+  try {
+    const result = await dynamodb.update({
+      TableName: USERS_TABLE,
+      Key: { userId },
+      UpdateExpression: 'SET #name = :name, email = :email, updatedAt = :updatedAt',
+      ExpressionAttributeNames: {
+        '#name': 'name',
+      },
+      ExpressionAttributeValues: {
+        ':name': data.name,
+        ':email': data.email,
+        ':updatedAt': new Date().toISOString(),
+      },
+      ReturnValues: 'ALL_NEW',
+    });
+
+    return {
+      statusCode: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
+      body: JSON.stringify(result.Attributes),
+    };
+  } catch (error) {
+    console.error('Error updating user:', error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Internal server error' }),
+    };
+  }
+};
+
+// DELETE /users/{userId}
+export const deleteUser: APIGatewayProxyHandler = async (event) => {
+  const { userId } = event.pathParameters || {};
+
+  try {
+    await dynamodb.delete({
+      TableName: USERS_TABLE,
+      Key: { userId },
+    });
+
+    return {
+      statusCode: 204,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+      },
+      body: '',
+    };
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Internal server error' }),
+    };
+  }
+};
+```
+
+**Serverless Framework Configuration:**
+```yaml
+# serverless.yml
+service: your-app-api
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: us-east-1
+  stage: ${opt:stage, 'dev'}
+  memorySize: 256
+  timeout: 30
+
+  environment:
+    USERS_TABLE: ${self:service}-users-${self:provider.stage}
+    STAGE: ${self:provider.stage}
+    NODE_ENV: ${self:provider.stage}
+
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+            - dynamodb:Scan
+          Resource:
+            - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.USERS_TABLE}
+            - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.USERS_TABLE}/index/*
+
+functions:
+  getUser:
+    handler: lambda/handlers/users.getUser
+    events:
+      - http:
+          path: users/{userId}
+          method: get
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  createUser:
+    handler: lambda/handlers/users.createUser
+    events:
+      - http:
+          path: users
+          method: post
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  updateUser:
+    handler: lambda/handlers/users.updateUser
+    events:
+      - http:
+          path: users/{userId}
+          method: put
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  deleteUser:
+    handler: lambda/handlers/users.deleteUser
+    events:
+      - http:
+          path: users/{userId}
+          method: delete
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  # Scheduled function example
+  dailyAggregation:
+    handler: lambda/handlers/jobs.dailyAggregation
+    events:
+      - schedule:
+          rate: cron(0 2 * * ? *)  # Daily at 2 AM UTC
+          enabled: true
+
+  # S3 event trigger example
+  processUpload:
+    handler: lambda/handlers/uploads.processUpload
+    events:
+      - s3:
+          bucket: ${self:service}-uploads-${self:provider.stage}
+          event: s3:ObjectCreated:*
+          rules:
+            - suffix: .jpg
+            - suffix: .png
+
+resources:
+  Resources:
+    UsersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.USERS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: email
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: EmailIndex
+            KeySchema:
+              - AttributeName: email
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        StreamSpecification:
+          StreamViewType: NEW_AND_OLD_IMAGES
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+        Tags:
+          - Key: Environment
+            Value: ${self:provider.stage}
+
+    ApiGatewayAuthorizer:
+      Type: AWS::ApiGateway::Authorizer
+      Properties:
+        Name: CognitoAuthorizer
+        Type: COGNITO_USER_POOLS
+        IdentitySource: method.request.header.Authorization
+        RestApiId:
+          Ref: ApiGatewayRestApi
+        ProviderARNs:
+          - arn:aws:cognito-idp:${self:provider.region}:#{AWS::AccountId}:userpool/${self:custom.userPoolId}
+
+custom:
+  userPoolId: your-user-pool-id
+
+plugins:
+  - serverless-offline
+  - serverless-plugin-typescript
+```
+
+**Deployment Commands:**
+```bash
+# Install Serverless Framework
+npm install -g serverless
+
+# Install project dependencies
+npm install
+
+# Deploy to dev environment
+serverless deploy --stage dev
+
+# Deploy to production
+serverless deploy --stage prod
+
+# Deploy single function (faster)
+serverless deploy function --function getUser --stage dev
+
+# View logs
+serverless logs --function getUser --tail
+
+# Remove deployment
+serverless remove --stage dev
+```
+
+---
+
+#### AWS SAM (Serverless Application Model)
+
+**Alternative to Serverless Framework - More AWS-native:**
+
+```yaml
+# template.yaml
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless API with SAM
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: nodejs20.x
+    MemorySize: 256
+    Environment:
+      Variables:
+        USERS_TABLE: !Ref UsersTable
+        NODE_ENV: !Ref Environment
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+Resources:
+  # API Gateway
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref Environment
+      Cors:
+        AllowMethods: "'GET, POST, PUT, DELETE, OPTIONS'"
+        AllowHeaders: "'Content-Type, Authorization'"
+        AllowOrigin: "'*'"
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !GetAtt UserPool.Arn
+
+  # Lambda Functions
+  GetUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambda/handlers/
+      Handler: users.getUser
+      Events:
+        GetUser:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /users/{userId}
+            Method: get
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref UsersTable
+
+  CreateUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambda/handlers/
+      Handler: users.createUser
+      Events:
+        CreateUser:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /users
+            Method: post
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+
+  # DynamoDB Table
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-users
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # Cognito User Pool
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub ${AWS::StackName}-users
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/
+  UsersTableName:
+    Description: DynamoDB Users Table
+    Value: !Ref UsersTable
+```
+
+**SAM Deployment:**
+```bash
+# Build the application
+sam build
+
+# Deploy with guided prompts
+sam deploy --guided
+
+# Or deploy with parameters
+sam deploy --stack-name my-app-dev \
+  --parameter-overrides Environment=dev \
+  --capabilities CAPABILITY_IAM
+
+# Local testing
+sam local start-api
+sam local invoke GetUserFunction --event events/get-user.json
+
+# View logs
+sam logs --stack-name my-app-dev --tail
+```
+
+---
+
+#### Cloudflare Workers (Edge Functions)
+
+**Ultra-Low Latency Edge Computing:**
+
+```typescript
+// workers/api.ts
+export interface Env {
+  USERS_KV: KVNamespace;
+  DB: D1Database;
+  JWT_SECRET: string;
+}
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url);
+
+    // CORS preflight
+    if (request.method === 'OPTIONS') {
+      return handleCORS();
+    }
+
+    // JWT Authentication
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return jsonResponse({ error: 'Unauthorized' }, 401);
+    }
+
+    const token = authHeader.substring(7);
+    const userId = await verifyJWT(token, env.JWT_SECRET);
+    if (!userId) {
+      return jsonResponse({ error: 'Invalid token' }, 401);
+    }
+
+    // Routing
+    if (url.pathname.startsWith('/api/users')) {
+      return handleUsers(request, env, url, userId);
+    }
+
+    if (url.pathname.startsWith('/api/posts')) {
+      return handlePosts(request, env, url, userId);
+    }
+
+    return jsonResponse({ error: 'Not Found' }, 404);
+  },
+};
+
+// User handlers
+async function handleUsers(
+  request: Request,
+  env: Env,
+  url: URL,
+  authenticatedUserId: string
+): Promise<Response> {
+  const { method } = request;
+  const pathParts = url.pathname.split('/');
+  const userId = pathParts[3];
+
+  // GET /api/users/{userId}
+  if (method === 'GET' && userId) {
+    // Try KV cache first
+    const cached = await env.USERS_KV.get(`user:${userId}`, 'json');
+    if (cached) {
+      return jsonResponse(cached);
+    }
+
+    // Fetch from D1 database
+    const result = await env.DB.prepare(
+      'SELECT * FROM users WHERE id = ?'
+    ).bind(userId).first();
+
+    if (!result) {
+      return jsonResponse({ error: 'User not found' }, 404);
+    }
+
+    // Cache for 5 minutes
+    await env.USERS_KV.put(`user:${userId}`, JSON.stringify(result), {
+      expirationTtl: 300,
+    });
+
+    return jsonResponse(result);
+  }
+
+  // POST /api/users
+  if (method === 'POST') {
+    const data = await request.json<{ email: string; name: string }>();
+
+    if (!data.email || !data.name) {
+      return jsonResponse({ error: 'email and name are required' }, 400);
+    }
+
+    const newUserId = crypto.randomUUID();
+    const user = {
+      id: newUserId,
+      email: data.email,
+      name: data.name,
+      createdAt: new Date().toISOString(),
+    };
+
+    await env.DB.prepare(
+      'INSERT INTO users (id, email, name, created_at) VALUES (?, ?, ?, ?)'
+    ).bind(user.id, user.email, user.name, user.createdAt).run();
+
+    // Cache the new user
+    await env.USERS_KV.put(`user:${newUserId}`, JSON.stringify(user));
+
+    return jsonResponse(user, 201);
+  }
+
+  // PUT /api/users/{userId}
+  if (method === 'PUT' && userId) {
+    // Only allow users to update their own profile
+    if (userId !== authenticatedUserId) {
+      return jsonResponse({ error: 'Forbidden' }, 403);
+    }
+
+    const data = await request.json<{ name: string; email: string }>();
+
+    await env.DB.prepare(
+      'UPDATE users SET name = ?, email = ?, updated_at = ? WHERE id = ?'
+    ).bind(data.name, data.email, new Date().toISOString(), userId).run();
+
+    // Invalidate cache
+    await env.USERS_KV.delete(`user:${userId}`);
+
+    return jsonResponse({ success: true });
+  }
+
+  // DELETE /api/users/{userId}
+  if (method === 'DELETE' && userId) {
+    if (userId !== authenticatedUserId) {
+      return jsonResponse({ error: 'Forbidden' }, 403);
+    }
+
+    await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(userId).run();
+    await env.USERS_KV.delete(`user:${userId}`);
+
+    return new Response(null, { status: 204 });
+  }
+
+  return jsonResponse({ error: 'Method Not Allowed' }, 405);
+}
+
+// Helper functions
+function jsonResponse(data: any, status: number = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      ...getCORSHeaders(),
+    },
+  });
+}
+
+function getCORSHeaders(): Record<string, string> {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  };
+}
+
+function handleCORS(): Response {
+  return new Response(null, {
+    headers: getCORSHeaders(),
+  });
+}
+
+async function verifyJWT(token: string, secret: string): Promise<string | null> {
+  try {
+    // Simplified JWT verification - use a library in production
+    const [header, payload, signature] = token.split('.');
+    const decoded = JSON.parse(atob(payload));
+
+    // Check expiration
+    if (decoded.exp && decoded.exp < Date.now() / 1000) {
+      return null;
+    }
+
+    return decoded.userId;
+  } catch {
+    return null;
+  }
+}
+```
+
+**Cloudflare Workers Configuration:**
+```toml
+# wrangler.toml
+name = "your-app-api"
+main = "workers/api.ts"
+compatibility_date = "2024-01-01"
+
+[env.production]
+name = "your-app-api-prod"
+route = "api.yourdomain.com/*"
+
+[env.development]
+name = "your-app-api-dev"
+
+[[kv_namespaces]]
+binding = "USERS_KV"
+id = "your-kv-namespace-id"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "your-app-db"
+database_id = "your-database-id"
+
+[vars]
+ENVIRONMENT = "production"
+
+# Secrets (set via wrangler secret put)
+# JWT_SECRET = "set-via-cli"
+```
+
+**Deployment Commands:**
+```bash
+# Install Wrangler CLI
+npm install -g wrangler
+
+# Login to Cloudflare
+wrangler login
+
+# Create KV namespace
+wrangler kv:namespace create "USERS_KV"
+
+# Create D1 database
+wrangler d1 create your-app-db
+
+# Set secrets
+wrangler secret put JWT_SECRET
+
+# Deploy to production
+wrangler deploy --env production
+
+# Deploy to development
+wrangler deploy --env development
+
+# View logs
+wrangler tail --env production
+
+# Local development
+wrangler dev
+```
+
+---
+
+#### Serverless Framework Comparison
+
+| Feature | AWS Lambda | Google Cloud Functions | Azure Functions | Cloudflare Workers |
+|---------|------------|------------------------|-----------------|-------------------|
+| **Cold Start** | 100-1000ms | 100-800ms | 200-1200ms | <1ms |
+| **Execution Time** | 15 minutes | 60 minutes | 10 minutes | 30 seconds (CPU) |
+| **Memory** | 128MB-10GB | 128MB-32GB | 128MB-14GB | 128MB |
+| **Pricing** | $0.20/1M requests | $0.40/1M requests | $0.20/1M requests | $0.50/1M requests |
+| **Free Tier** | 1M requests/month | 2M requests/month | 1M requests/month | 100k requests/day |
+| **Latency** | 10-100ms | 10-100ms | 10-100ms | <10ms (edge) |
+| **Languages** | Node, Python, Go, Java, .NET, Ruby | Node, Python, Go, Java, .NET, Ruby, PHP | Node, Python, C#, Java, PowerShell | JavaScript, TypeScript, Rust, C/C++ |
+| **Best For** | Backend APIs, Batch jobs | Data processing | .NET workloads | Edge APIs, CDN customization |
+
+---
+
+#### Cold Start Optimization
+
+**Problem:** Functions experience 100-1000ms delay on first invocation after being idle.
+
+**Solutions:**
+
+**1. Provisioned Concurrency (AWS Lambda):**
+```yaml
+# serverless.yml
+functions:
+  getUser:
+    handler: lambda/handlers/users.getUser
+    provisionedConcurrency: 5  # Always-warm instances
+```
+
+**2. Warming Strategy:**
+```typescript
+// lambda/warmup.ts
+import { Handler } from 'aws-lambda';
+
+export const handler: Handler = async () => {
+  // This function does nothing but keeps Lambda warm
+  return { statusCode: 200, body: 'Warmed' };
+};
+
+// Schedule every 5 minutes
+// serverless.yml
+functions:
+  warmup:
+    handler: lambda/warmup.handler
+    events:
+      - schedule: rate(5 minutes)
+```
+
+**3. Optimize Package Size:**
+```bash
+# Use webpack to bundle and tree-shake
+npm install --save-dev serverless-webpack webpack
+
+# webpack.config.js
+module.exports = {
+  target: 'node',
+  mode: 'production',
+  optimization: {
+    minimize: true,
+  },
+  externals: {
+    'aws-sdk': 'aws-sdk',  # Exclude AWS SDK (provided by Lambda)
+  },
+};
+```
+
+**4. Initialize Outside Handler:**
+```typescript
+// ❌ Bad - Initialize inside handler
+export const handler = async (event) => {
+  const dynamodb = new DynamoDB();  // Cold start penalty every time
+  // ...
+};
+
+// ✅ Good - Initialize outside handler
+const dynamodb = new DynamoDB();  // Initialize once, reused across invocations
+export const handler = async (event) => {
+  // ...
+};
+```
+
+---
+
+#### Serverless Databases
+
+**DynamoDB (AWS):**
+```typescript
+// Best for: Key-value storage, high throughput
+const dynamodb = DynamoDBDocument.from(new DynamoDB({}));
+
+await dynamodb.put({
+  TableName: 'users',
+  Item: { userId: '123', name: 'John' },
+});
+```
+
+**Planetscale (MySQL - Serverless):**
+```typescript
+// Best for: Relational data, complex queries
+import { PlanetScaleClient } from '@planetscale/database';
+
+const db = new PlanetScaleClient({
+  host: process.env.DATABASE_HOST,
+  username: process.env.DATABASE_USERNAME,
+  password: process.env.DATABASE_PASSWORD,
+});
+
+const result = await db.execute('SELECT * FROM users WHERE id = ?', ['123']);
+```
+
+**Cloudflare D1 (SQLite - Edge):**
+```typescript
+// Best for: Edge computing, read-heavy workloads
+const result = await env.DB.prepare(
+  'SELECT * FROM users WHERE id = ?'
+).bind('123').first();
+```
+
+**Fauna (Global distributed):**
+```typescript
+// Best for: Multi-region, ACID transactions
+import { Client, query as q } from 'faunadb';
+
+const client = new Client({ secret: process.env.FAUNA_SECRET });
+
+const result = await client.query(
+  q.Get(q.Ref(q.Collection('users'), '123'))
+);
+```
+
+---
+
+#### Serverless Authentication
+
+**AWS Cognito:**
+```yaml
+# serverless.yml
+resources:
+  Resources:
+    UserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: ${self:service}-users-${self:provider.stage}
+        UsernameAttributes:
+          - email
+        AutoVerifiedAttributes:
+          - email
+        Policies:
+          PasswordPolicy:
+            MinimumLength: 8
+            RequireUppercase: true
+            RequireLowercase: true
+            RequireNumbers: true
+            RequireSymbols: true
+
+    UserPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        ClientName: ${self:service}-client
+        UserPoolId: !Ref UserPool
+        GenerateSecret: false
+        ExplicitAuthFlows:
+          - ALLOW_USER_PASSWORD_AUTH
+          - ALLOW_REFRESH_TOKEN_AUTH
+```
+
+**Auth0 Integration:**
+```typescript
+// lambda/middleware/auth.ts
+import jwt from 'jsonwebtoken';
+import jwksClient from 'jwks-rsa';
+
+const client = jwksClient({
+  jwksUri: `https://${process.env.AUTH0_DOMAIN}/.well-known/jwks.json`,
+});
+
+function getKey(header: any, callback: any) {
+  client.getSigningKey(header.kid, (err, key) => {
+    callback(null, key?.getPublicKey());
+  });
+}
+
+export async function verifyToken(token: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    jwt.verify(token, getKey, {
+      audience: process.env.AUTH0_AUDIENCE,
+      issuer: `https://${process.env.AUTH0_DOMAIN}/`,
+      algorithms: ['RS256'],
+    }, (err, decoded) => {
+      if (err) reject(err);
+      else resolve(decoded);
+    });
+  });
+}
+```
+
+---
+
+#### Serverless Monitoring
+
+**CloudWatch Logs Insights Queries:**
+```sql
+-- Find errors
+fields @timestamp, @message
+| filter @message like /ERROR/
+| sort @timestamp desc
+| limit 20
+
+-- Lambda performance
+fields @timestamp, @duration, @billedDuration, @memorySize, @maxMemoryUsed
+| stats avg(@duration), max(@duration), min(@duration) by bin(5m)
+
+-- API Gateway metrics
+fields @timestamp, @message
+| filter @message like /\{.*statusCode.*\}/
+| parse @message /statusCode:\s*(?<statusCode>\d+)/
+| stats count() by statusCode
+```
+
+**X-Ray Tracing:**
+```typescript
+import AWSXRay from 'aws-xray-sdk-core';
+import AWS from 'aws-sdk';
+
+const dynamodb = AWSXRay.captureAWSClient(new AWS.DynamoDB());
+
+export const handler = async (event: any) => {
+  const segment = AWSXRay.getSegment();
+  const subsegment = segment?.addNewSubsegment('getUserLogic');
+
+  try {
+    // Your logic here
+    const result = await dynamodb.getItem({ /* ... */ }).promise();
+    return result;
+  } finally {
+    subsegment?.close();
+  }
+};
+```
+
+---
+
+#### Serverless CI/CD
+
+**GitHub Actions Deployment:**
+```yaml
+# .github/workflows/deploy-lambda.yml
+name: Deploy Lambda Functions
+
+on:
+  push:
+    branches: [main, develop]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Deploy to AWS (Dev)
+        if: github.ref == 'refs/heads/develop'
+        run: npx serverless deploy --stage dev
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Deploy to AWS (Prod)
+        if: github.ref == 'refs/heads/main'
+        run: npx serverless deploy --stage prod
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_PROD_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_PROD_SECRET_ACCESS_KEY }}
+```
+
+---
+
+#### Environment Variables
+
+```env
+# AWS Lambda
+AWS_REGION=us-east-1
+USERS_TABLE=your-app-users-dev
+NODE_ENV=development
+
+# Cloudflare Workers
+CLOUDFLARE_ACCOUNT_ID=your-account-id
+CLOUDFLARE_API_TOKEN=your-api-token
+
+# Serverless Framework
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+
+# Auth0
+AUTH0_DOMAIN=your-domain.auth0.com
+AUTH0_AUDIENCE=https://your-api.com
+AUTH0_CLIENT_ID=your-client-id
+AUTH0_CLIENT_SECRET=your-client-secret
+
+# Database
+PLANETSCALE_HOST=aws.connect.psdb.cloud
+PLANETSCALE_USERNAME=your-username
+PLANETSCALE_PASSWORD=your-password
+
+FAUNA_SECRET=your-fauna-secret
+```
+
+---
+
+#### Cost Optimization
+
+**Strategies:**
+- **Right-size memory:** Higher memory = more CPU, faster execution, potentially lower cost
+- **Optimize bundle size:** Smaller packages = faster cold starts, less network transfer
+- **Use ARM64 (Graviton2):** 20% better price/performance than x86
+- **Leverage caching:** KV stores, CDN caching reduces function invocations
+- **Batch processing:** Process multiple items per invocation (SQS batching)
+- **Reserved capacity:** For predictable workloads, use provisioned concurrency or reserved instances
+
+**Cost Monitoring:**
+```yaml
+# CloudWatch Alarm for Lambda costs
+CostAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: LambdaCostAlert
+    ComparisonOperator: GreaterThanThreshold
+    EvaluationPeriods: 1
+    MetricName: EstimatedCharges
+    Namespace: AWS/Billing
+    Period: 86400  # 24 hours
+    Statistic: Maximum
+    Threshold: 100  # Alert if cost > $100/day
+    AlarmActions:
+      - !Ref SNSTopic
+```
+
+---
+
+#### When to Use Serverless vs. Containers
+
+**Choose Serverless When:**
+✅ Traffic is sporadic or unpredictable
+✅ Startup time <1s is acceptable
+✅ Execution time <15 minutes is sufficient
+✅ Cost optimization is critical (pay-per-use)
+✅ You want zero infrastructure management
+✅ Application is event-driven or API-based
+
+**Choose Containers (Kubernetes/ECS) When:**
+❌ Consistent traffic 24/7 (always-on cheaper than serverless)
+❌ Long-running processes (>15 minutes)
+❌ Complex networking requirements
+❌ Need for persistent connections (WebSockets)
+❌ Very high request volume (millions/day)
+❌ Sub-10ms latency required (except Cloudflare Workers)
+
+**Hybrid Approach:**
+- Use serverless for APIs, event processing, cron jobs
+- Use containers for WebSockets, background workers, databases
+- Example: Next.js frontend (Vercel serverless) + API (AWS Lambda) + WebSocket server (ECS Fargate)
+
 ---
 
 ## 🧪 TESTING STRATEGY
