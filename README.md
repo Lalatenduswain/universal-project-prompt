@@ -307,6 +307,15 @@ Generate API-focused documentation (skip frontend docs).
 - Resolution Time Tracking
 - Customer Satisfaction Scores
 
+**OpenTelemetry Observability:**
+- Industry-standard distributed tracing (2026)
+- Vendor-neutral telemetry (Jaeger, Datadog, New Relic, Grafana)
+- Auto-instrumentation (Express, Prisma, Redis, PostgreSQL)
+- Unified metrics, logs, and traces pipeline
+- 40-60% faster MTTR with distributed tracing
+- Custom business metrics and alerting
+- Production-ready Docker Compose stack
+
 ### 🏢 Enterprise Features
 
 **Multi-Tenancy Architecture:**

@@ -4025,6 +4025,567 @@ Maintenance:
   - Restore Points Available
 ```
 
+### OpenTelemetry Integration (Distributed Tracing & Observability)
+
+OpenTelemetry is the industry-standard open-source observability framework for 2026, providing vendor-neutral instrumentation for metrics, logs, and distributed traces across microservices.
+
+**Why OpenTelemetry:**
+- De facto standard adopted by major cloud providers and APM vendors
+- Vendor-neutral: Switch between Jaeger, Datadog, New Relic, Grafana without code changes
+- Auto-instrumentation for popular frameworks (Express, Prisma, Redis, PostgreSQL)
+- Unified telemetry pipeline for metrics, logs, and traces
+- Faster MTTR (Mean Time To Resolution) by 40-60% with distributed tracing
+
+#### Installation
+
+```bash
+# Install OpenTelemetry SDK and auto-instrumentation
+npm install --save @opentelemetry/sdk-node \
+  @opentelemetry/auto-instrumentations-node \
+  @opentelemetry/exporter-trace-otlp-http \
+  @opentelemetry/exporter-metrics-otlp-http \
+  @opentelemetry/resources \
+  @opentelemetry/semantic-conventions
+```
+
+#### Configuration
+
+**1. Create OpenTelemetry Instrumentation File**
+
+```typescript
+// src/instrumentation.ts
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
+import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
+import { Resource } from '@opentelemetry/resources';
+import {
+  SEMRESATTRS_SERVICE_NAME,
+  SEMRESATTRS_SERVICE_VERSION,
+  SEMRESATTRS_DEPLOYMENT_ENVIRONMENT,
+} from '@opentelemetry/semantic-conventions';
+
+// Configure resource attributes
+const resource = new Resource({
+  [SEMRESATTRS_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME || 'your-app',
+  [SEMRESATTRS_SERVICE_VERSION]: process.env.APP_VERSION || '1.0.0',
+  [SEMRESATTRS_DEPLOYMENT_ENVIRONMENT]: process.env.NODE_ENV || 'development',
+});
+
+// Configure trace exporter
+const traceExporter = new OTLPTraceExporter({
+  url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4318/v1/traces',
+  headers: {
+    'Authorization': `Bearer ${process.env.OTEL_EXPORTER_TOKEN || ''}`,
+  },
+});
+
+// Configure metrics exporter
+const metricExporter = new OTLPMetricExporter({
+  url: process.env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT || 'http://localhost:4318/v1/metrics',
+});
+
+const metricReader = new PeriodicExportingMetricReader({
+  exporter: metricExporter,
+  exportIntervalMillis: 60000, // Export every 60 seconds
+});
+
+// Initialize OpenTelemetry SDK
+const sdk = new NodeSDK({
+  resource,
+  traceExporter,
+  metricReader,
+  instrumentations: [
+    getNodeAutoInstrumentations({
+      // Automatic instrumentation for common libraries
+      '@opentelemetry/instrumentation-http': {
+        enabled: true,
+      },
+      '@opentelemetry/instrumentation-express': {
+        enabled: true,
+      },
+      '@opentelemetry/instrumentation-pg': {
+        enabled: true,
+        enhancedDatabaseReporting: true,
+      },
+      '@opentelemetry/instrumentation-redis-4': {
+        enabled: true,
+      },
+      '@opentelemetry/instrumentation-fs': {
+        enabled: false, // Disable for performance
+      },
+    }),
+  ],
+});
+
+// Start the SDK
+sdk.start();
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  sdk
+    .shutdown()
+    .then(() => console.log('OpenTelemetry terminated'))
+    .catch((error) => console.error('Error terminating OpenTelemetry', error))
+    .finally(() => process.exit(0));
+});
+
+export default sdk;
+```
+
+**2. Bootstrap OpenTelemetry in Application**
+
+```typescript
+// src/server.ts or src/index.ts
+// IMPORTANT: Import instrumentation BEFORE any other imports
+import './instrumentation';
+
+import express from 'express';
+import { trace, context, SpanStatusCode } from '@opentelemetry/api';
+
+const app = express();
+
+// Your application code...
+app.get('/api/users/:id', async (req, res) => {
+  // Get current span for custom attributes
+  const span = trace.getActiveSpan();
+
+  try {
+    const userId = req.params.id;
+
+    // Add custom attributes to span
+    span?.setAttribute('user.id', userId);
+    span?.setAttribute('http.route', '/api/users/:id');
+
+    // Your business logic (auto-instrumented)
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      span?.setStatus({ code: SpanStatusCode.ERROR, message: 'User not found' });
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    span?.setAttribute('user.email', user.email);
+    span?.setStatus({ code: SpanStatusCode.OK });
+
+    res.json(user);
+  } catch (error) {
+    // Record exception in trace
+    span?.recordException(error as Error);
+    span?.setStatus({ code: SpanStatusCode.ERROR, message: (error as Error).message });
+
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+```
+
+**3. Custom Spans for Business Logic**
+
+```typescript
+import { trace } from '@opentelemetry/api';
+
+const tracer = trace.getTracer('business-logic', '1.0.0');
+
+export async function processOrder(orderId: string) {
+  // Create custom span
+  return await tracer.startActiveSpan('processOrder', async (span) => {
+    try {
+      span.setAttribute('order.id', orderId);
+
+      // Step 1: Validate order
+      await tracer.startActiveSpan('validateOrder', async (validateSpan) => {
+        // Validation logic
+        validateSpan.end();
+      });
+
+      // Step 2: Process payment
+      await tracer.startActiveSpan('processPayment', async (paymentSpan) => {
+        paymentSpan.setAttribute('payment.method', 'stripe');
+        // Payment logic
+        paymentSpan.end();
+      });
+
+      // Step 3: Update inventory
+      await tracer.startActiveSpan('updateInventory', async (inventorySpan) => {
+        // Inventory logic
+        inventorySpan.end();
+      });
+
+      span.setStatus({ code: SpanStatusCode.OK });
+      return { success: true };
+
+    } catch (error) {
+      span.recordException(error as Error);
+      span.setStatus({ code: SpanStatusCode.ERROR });
+      throw error;
+    } finally {
+      span.end();
+    }
+  });
+}
+```
+
+#### Environment Variables
+
+```env
+# OpenTelemetry Configuration
+OTEL_SERVICE_NAME=your-app-name
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces
+OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:4318/v1/metrics
+OTEL_EXPORTER_TOKEN=your-observability-platform-token
+
+# Sampling Configuration
+OTEL_TRACES_SAMPLER=parentbased_traceidratio
+OTEL_TRACES_SAMPLER_ARG=0.1  # Sample 10% of traces (adjust based on traffic)
+
+# Log Level
+OTEL_LOG_LEVEL=info  # debug, info, warn, error
+
+# Application Metadata
+APP_VERSION=1.0.0
+NODE_ENV=production
+```
+
+#### Observability Stack Setup (Docker Compose)
+
+```yaml
+# docker-compose.observability.yml
+version: '3.8'
+
+services:
+  # Jaeger - Distributed Tracing UI
+  jaeger:
+    image: jaegertracing/all-in-one:1.51
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4317:4317"    # OTLP gRPC receiver
+      - "4318:4318"    # OTLP HTTP receiver
+
+  # Prometheus - Metrics Storage
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+
+  # Grafana - Visualization Dashboard
+  grafana:
+    image: grafana/grafana:10.2.0
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+      - jaeger
+
+volumes:
+  prometheus-data:
+  grafana-data:
+```
+
+**Prometheus Configuration:**
+```yaml
+# prometheus/prometheus.yml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'app'
+    static_configs:
+      - targets: ['app:3000']  # Your application metrics endpoint
+```
+
+**Grafana Datasources:**
+```yaml
+# grafana/datasources.yml
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+
+  - name: Jaeger
+    type: jaeger
+    access: proxy
+    url: http://jaeger:16686
+```
+
+#### Key Metrics to Monitor
+
+**Automatically Collected:**
+```yaml
+HTTP Metrics:
+  - http.server.duration (response time)
+  - http.server.request.size
+  - http.server.response.size
+  - http.server.active_requests
+
+Database Metrics:
+  - db.client.connections.usage (active connections)
+  - db.client.connections.max
+  - db.client.operation.duration (query time)
+
+Redis Metrics:
+  - redis.client.operation.duration
+  - redis.client.connections.usage
+
+Process Metrics:
+  - process.cpu.utilization
+  - process.memory.usage
+  - process.runtime.nodejs.heap.size
+```
+
+**Custom Business Metrics:**
+```typescript
+import { metrics } from '@opentelemetry/api';
+
+const meter = metrics.getMeter('business-metrics', '1.0.0');
+
+// Counter: Total orders created
+const orderCounter = meter.createCounter('orders.created', {
+  description: 'Total number of orders created',
+});
+
+orderCounter.add(1, {
+  'order.status': 'pending',
+  'payment.method': 'stripe',
+});
+
+// Histogram: Order processing time
+const orderProcessingTime = meter.createHistogram('order.processing.duration', {
+  description: 'Time to process an order in seconds',
+  unit: 's',
+});
+
+orderProcessingTime.record(1.234, {
+  'order.type': 'standard',
+});
+
+// UpDownCounter: Active users
+const activeUsers = meter.createUpDownCounter('users.active', {
+  description: 'Number of currently active users',
+});
+
+activeUsers.add(1);  // User logged in
+activeUsers.add(-1); // User logged out
+```
+
+#### Alerting Rules (Prometheus)
+
+```yaml
+# prometheus/alerts.yml
+groups:
+  - name: application_alerts
+    interval: 30s
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_server_duration_count{http_status_code=~"5.."}[5m]))
+          /
+          sum(rate(http_server_duration_count[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }}"
+
+      - alert: HighResponseTime
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_server_duration_bucket[5m])) by (le)
+          ) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High response time detected"
+          description: "P95 response time is {{ $value }}s"
+
+      - alert: DatabaseConnectionPoolExhausted
+        expr: db_client_connections_usage > 45
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database connection pool near limit"
+          description: "Active connections: {{ $value }} (limit: 50)"
+```
+
+#### Grafana Dashboard Queries
+
+**Response Time P95:**
+```promql
+histogram_quantile(0.95,
+  sum(rate(http_server_duration_bucket[5m])) by (le, http_route)
+)
+```
+
+**Request Rate by Endpoint:**
+```promql
+sum(rate(http_server_duration_count[5m])) by (http_route, http_method)
+```
+
+**Error Rate Percentage:**
+```promql
+sum(rate(http_server_duration_count{http_status_code=~"5.."}[5m]))
+/
+sum(rate(http_server_duration_count[5m])) * 100
+```
+
+**Database Query Duration:**
+```promql
+histogram_quantile(0.95,
+  sum(rate(db_client_operation_duration_bucket[5m])) by (le, db_operation)
+)
+```
+
+#### Best Practices
+
+**1. Sampling Strategy:**
+- Development: 100% sampling (OTEL_TRACES_SAMPLER_ARG=1.0)
+- Staging: 50% sampling (OTEL_TRACES_SAMPLER_ARG=0.5)
+- Production: 10% sampling for high traffic (OTEL_TRACES_SAMPLER_ARG=0.1)
+- Always sample error traces (parentbased_traceidratio ensures error traces are kept)
+
+**2. Span Attributes:**
+- Add business context: user.id, order.id, tenant.id
+- Include request metadata: http.route, http.method
+- Tag critical operations: payment.method, cache.hit
+- Keep attribute count reasonable (<20 per span)
+
+**3. Performance Impact:**
+- OpenTelemetry overhead: <5% CPU, <50MB memory
+- Use async exporters to avoid blocking requests
+- Batch exports for efficiency
+- Monitor exporter queue length
+
+**4. Security:**
+- Never log sensitive data (passwords, tokens, credit cards)
+- Sanitize user input in span attributes
+- Use TLS for exporter endpoints
+- Rotate OTEL_EXPORTER_TOKEN regularly
+
+**5. Multi-Service Tracing:**
+- Propagate trace context in HTTP headers (automatic)
+- Use same OTEL_SERVICE_NAME across instances
+- Different service names for microservices
+- Maintain consistent trace IDs across service boundaries
+
+#### Integration with Existing Monitoring
+
+**Combine with System Monitoring:**
+```typescript
+// Add OpenTelemetry metrics to existing health endpoint
+app.get('/health', async (req, res) => {
+  const span = trace.getActiveSpan();
+
+  const health = {
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+
+    // Add OpenTelemetry context
+    trace: {
+      traceId: span?.spanContext().traceId,
+      spanId: span?.spanContext().spanId,
+    },
+
+    // Existing checks
+    database: await checkDatabaseHealth(),
+    redis: await checkRedisHealth(),
+  };
+
+  res.json(health);
+});
+```
+
+#### Troubleshooting
+
+**No traces appearing in Jaeger:**
+1. Check OTEL_EXPORTER_OTLP_ENDPOINT is correct
+2. Verify Jaeger is running: `curl http://localhost:4318`
+3. Check application logs for OpenTelemetry errors
+4. Ensure sampling rate is not 0
+5. Test with a simple curl: `curl http://localhost:3000/api/health`
+
+**High memory usage:**
+1. Reduce sampling rate (OTEL_TRACES_SAMPLER_ARG)
+2. Decrease export interval (exportIntervalMillis)
+3. Disable unused instrumentations
+4. Check for span leaks (spans not properly ended)
+
+**Missing database/Redis traces:**
+1. Ensure instrumentation packages are installed
+2. Import instrumentation.ts BEFORE other imports
+3. Check library versions are compatible
+4. Enable debug logging: OTEL_LOG_LEVEL=debug
+
+#### Cloud Provider Integrations
+
+**AWS X-Ray:**
+```typescript
+import { AWSXRayPropagator } from '@opentelemetry/propagator-aws-xray';
+import { AwsXRayIdGenerator } from '@opentelemetry/id-generator-aws-xray';
+
+const sdk = new NodeSDK({
+  textMapPropagator: new AWSXRayPropagator(),
+  idGenerator: new AwsXRayIdGenerator(),
+  // ... rest of config
+});
+```
+
+**Google Cloud Trace:**
+```typescript
+import { TraceExporter } from '@google-cloud/opentelemetry-cloud-trace-exporter';
+
+const traceExporter = new TraceExporter();
+```
+
+**Azure Monitor:**
+```typescript
+import { AzureMonitorTraceExporter } from '@azure/monitor-opentelemetry-exporter';
+
+const traceExporter = new AzureMonitorTraceExporter({
+  connectionString: process.env.APPLICATIONINSIGHTS_CONNECTION_STRING,
+});
+```
+
+#### Resources
+
+**Official Documentation:**
+- OpenTelemetry Docs: https://opentelemetry.io/docs/
+- Node.js SDK: https://opentelemetry.io/docs/instrumentation/js/
+- Semantic Conventions: https://opentelemetry.io/docs/specs/semconv/
+
+**Observability Tools:**
+- Jaeger: https://www.jaegertracing.io/
+- Grafana: https://grafana.com/
+- Prometheus: https://prometheus.io/
+- Datadog: https://www.datadoghq.com/
+- New Relic: https://newrelic.com/
+- Honeycomb: https://www.honeycomb.io/
+
 ---
 
 ## 💾 BACKUP & DISASTER RECOVERY
@@ -6921,6 +7482,16 @@ PII_ENCRYPTION_ENABLED=true
 DATA_RETENTION_DAYS=2555
 ENABLE_GDPR_MODE=true
 GDPR_DPO_EMAIL=dpo@yourapp.com
+
+# OpenTelemetry (Distributed Tracing & Observability)
+OTEL_SERVICE_NAME=your-app-name
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces
+OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:4318/v1/metrics
+OTEL_EXPORTER_TOKEN=
+OTEL_TRACES_SAMPLER=parentbased_traceidratio
+OTEL_TRACES_SAMPLER_ARG=0.1
+OTEL_LOG_LEVEL=info
+APP_VERSION=1.0.0
 ```
 
 ---

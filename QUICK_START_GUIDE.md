@@ -988,6 +988,108 @@ Generate:
 
 ---
 
+## 🔍 OpenTelemetry Observability Quick Start
+
+### Add Distributed Tracing (Industry Standard 2026)
+```
+"Add OpenTelemetry distributed tracing to my application:
+
+Stack: Node.js + Express + Prisma + Redis
+
+Features:
+- Auto-instrumentation for Express, Prisma, PostgreSQL, Redis
+- Custom spans for business logic (order processing, payments)
+- Distributed tracing across microservices
+- Vendor-neutral (works with Jaeger, Datadog, New Relic, Grafana)
+- Prometheus metrics export
+- Grafana dashboards with alerting
+
+Observability Stack:
+- Jaeger for distributed tracing UI
+- Prometheus for metrics storage
+- Grafana for visualization
+- Docker Compose setup for local development
+
+Environment Configuration:
+- Sampling: 10% in production, 100% in development
+- OTLP exporter to localhost:4318
+- Custom business metrics (orders, payments, active users)
+
+Alerting Rules:
+- High error rate (>5% for 5 minutes)
+- High response time (P95 >1 second)
+- Database connection pool exhausted (>45 connections)
+- Low cache hit rate (<70%)
+
+Generate:
+1. OpenTelemetry instrumentation setup (src/instrumentation.ts)
+2. Docker Compose observability stack
+3. Prometheus configuration with alerting rules
+4. Grafana datasources and dashboards
+5. Custom spans for critical business flows
+6. Environment variables configuration
+7. Integration with existing /health endpoint
+8. Troubleshooting guide"
+```
+
+### Quick Setup Steps
+```bash
+# 1. Install OpenTelemetry packages
+npm install --save @opentelemetry/sdk-node \
+  @opentelemetry/auto-instrumentations-node \
+  @opentelemetry/exporter-trace-otlp-http \
+  @opentelemetry/exporter-metrics-otlp-http
+
+# 2. Create instrumentation.ts (before all other imports)
+# See UNIVERSAL_PROJECT_PROMPT.md for complete setup
+
+# 3. Add environment variables to .env
+OTEL_SERVICE_NAME=your-app
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces
+OTEL_TRACES_SAMPLER=parentbased_traceidratio
+OTEL_TRACES_SAMPLER_ARG=1.0  # 100% for development
+
+# 4. Start observability stack
+docker-compose -f docker-compose.observability.yml up -d
+
+# 5. Access dashboards
+# Jaeger UI: http://localhost:16686
+# Prometheus: http://localhost:9090
+# Grafana: http://localhost:3001 (admin/admin)
+
+# 6. Generate test traffic
+curl http://localhost:3000/api/health
+
+# 7. View traces in Jaeger
+# Filter by service name and see distributed traces
+```
+
+### Benefits
+```yaml
+Faster Troubleshooting:
+  - 40-60% faster MTTR (Mean Time To Resolution)
+  - Trace requests across microservices in seconds
+  - Identify bottlenecks with span timing
+
+Vendor Flexibility:
+  - Start with Jaeger (free, open-source)
+  - Switch to Datadog, New Relic, or Grafana Cloud later
+  - No code changes required, just change exporter
+
+Production Ready:
+  - <5% CPU overhead, <50MB memory
+  - Configurable sampling (10% in production)
+  - Automatic error trace capture
+  - Cloud provider integrations (AWS X-Ray, Google Cloud Trace)
+
+Industry Standard:
+  - De facto observability standard for 2026
+  - Adopted by all major APM vendors
+  - CNCF graduated project
+```
+
+---
+
 ## 📞 Need Help?
 
 ### Common Questions
